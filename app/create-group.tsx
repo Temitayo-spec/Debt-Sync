@@ -1,120 +1,174 @@
 import {
-  View,
   Text,
   TextInput,
   Pressable,
   StyleSheet,
   KeyboardAvoidingView,
   Platform,
+  View,
 } from "react-native";
 import { useState } from "react";
 import { useRouter } from "expo-router";
+import AppScreen from "../src/components/AppScreen";
 import { useStore } from "../src/store/useStore";
+import { palette, radii, shadows, typography } from "../src/theme";
 
 export default function CreateGroup() {
   const [name, setName] = useState("");
-  const [members, setMembers] = useState("");
   const createGroup = useStore((s) => s.createGroup);
   const router = useRouter();
 
-  const handleCreate = () => {
-    if (!name.trim() || !members.trim()) return;
-
-    const memberList = members
-      .split(",")
-      .map((m) => m.trim())
-      .filter(Boolean);
-
-    if (memberList.length < 2) return;
-
-    createGroup(name.trim(), memberList);
+  const handleCreate = async () => {
+    if (!name.trim()) return;
+    await createGroup(name.trim());
     router.back();
   };
 
   return (
-    <KeyboardAvoidingView
-      style={styles.container}
-      behavior={Platform.OS === "ios" ? "padding" : undefined}
-    >
-      <Text style={styles.heading}>New Group</Text>
-
-      <Text style={styles.label}>Group Name</Text>
-      <TextInput
-        placeholder="e.g. Lagos Trip"
-        value={name}
-        onChangeText={setName}
-        style={styles.input}
-      />
-
-      <Text style={styles.label}>Members</Text>
-      <TextInput
-        placeholder="e.g. Tayo, Ada, John"
-        value={members}
-        onChangeText={setMembers}
-        style={styles.input}
-      />
-      <Text style={styles.hint}>Separate names with commas</Text>
-
-      <Pressable
-        onPress={handleCreate}
-        style={[
-          styles.button,
-          (!name.trim() || !members.trim()) && styles.buttonDisabled,
-        ]}
+    <AppScreen scroll contentContainerStyle={styles.screen}>
+      <KeyboardAvoidingView
+        style={styles.container}
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
       >
-        <Text style={styles.buttonText}>Create Group</Text>
-      </Pressable>
+        <Pressable onPress={() => router.back()} style={styles.back}>
+          <Text style={styles.backText}>Back</Text>
+        </Pressable>
 
-      <Pressable onPress={() => router.back()} style={styles.cancel}>
-        <Text style={styles.cancelText}>Cancel</Text>
-      </Pressable>
-    </KeyboardAvoidingView>
+        <View style={styles.hero}>
+          <Text style={styles.eyebrow}>Build a shared tab</Text>
+          <Text style={styles.heading}>Create a new group</Text>
+          <Text style={styles.subheading}>
+            Give your group a name. You'll be added as the first member. Share
+            the invite code with others so they can join.
+          </Text>
+        </View>
+
+        <View style={styles.formCard}>
+          <Text style={styles.label}>Group name</Text>
+          <TextInput
+            placeholder="e.g. Lagos Trip"
+            placeholderTextColor={palette.inkFaint}
+            value={name}
+            onChangeText={setName}
+            style={styles.input}
+            autoFocus
+          />
+          <Text style={styles.hint}>
+            Others will join using the invite code after the group is created.
+          </Text>
+        </View>
+
+        <Pressable
+          onPress={handleCreate}
+          style={[
+            styles.button,
+            name.trim().length === 0 && styles.buttonDisabled,
+          ]}
+        >
+          <Text style={styles.buttonText}>Create Group</Text>
+        </Pressable>
+
+        <Pressable onPress={() => router.back()} style={styles.cancel}>
+          <Text style={styles.cancelText}>Cancel</Text>
+        </Pressable>
+      </KeyboardAvoidingView>
+    </AppScreen>
   );
 }
 
 const styles = StyleSheet.create({
+  screen: {
+    paddingTop: 6,
+  },
   container: {
     flex: 1,
-    padding: 24,
-    paddingTop: 60,
+  },
+  back: {
+    alignSelf: "flex-start",
+    backgroundColor: palette.surface,
+    borderRadius: radii.pill,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderWidth: 1,
+    borderColor: palette.line,
+    marginBottom: 20,
+  },
+  backText: {
+    fontFamily: typography.bodyMedium,
+    fontSize: 13,
+    color: palette.ink,
+  },
+  hero: {
+    marginBottom: 24,
+  },
+  eyebrow: {
+    fontFamily: typography.bodyMedium,
+    color: palette.accent,
+    fontSize: 12,
+    letterSpacing: 2,
+    textTransform: "uppercase",
+    marginBottom: 10,
   },
   heading: {
-    fontSize: 32,
-    fontWeight: "bold",
-    marginBottom: 32,
+    fontFamily: typography.display,
+    fontSize: 36,
+    lineHeight: 40,
+    color: palette.ink,
+    marginBottom: 10,
+  },
+  subheading: {
+    fontFamily: typography.body,
+    fontSize: 15,
+    lineHeight: 23,
+    color: palette.inkSoft,
+  },
+  formCard: {
+    backgroundColor: palette.surface,
+    borderRadius: radii.lg,
+    borderWidth: 1,
+    borderColor: palette.line,
+    padding: 20,
+    marginBottom: 20,
+    ...shadows.card,
   },
   label: {
-    fontSize: 14,
-    fontWeight: "600",
-    marginBottom: 8,
-    color: "#333",
+    fontFamily: typography.bodyMedium,
+    fontSize: 12,
+    marginBottom: 10,
+    color: palette.inkSoft,
+    letterSpacing: 1.6,
+    textTransform: "uppercase",
   },
   input: {
     borderWidth: 1,
-    borderColor: "#e0e0e0",
-    borderRadius: 12,
+    borderColor: palette.line,
+    borderRadius: radii.sm,
     padding: 14,
     fontSize: 16,
-    marginBottom: 16,
+    fontFamily: typography.body,
+    color: palette.ink,
+    marginBottom: 8,
+    backgroundColor: palette.surfaceMuted,
   },
   hint: {
     fontSize: 12,
-    color: "#aaa",
-    marginTop: -10,
-    marginBottom: 24,
+    fontFamily: typography.body,
+    color: palette.inkFaint,
+    lineHeight: 18,
   },
   button: {
-    backgroundColor: "#000",
+    backgroundColor: palette.accent,
     padding: 16,
-    borderRadius: 12,
+    borderRadius: radii.pill,
     alignItems: "center",
+    ...shadows.card,
   },
   buttonDisabled: {
-    backgroundColor: "#ccc",
+    backgroundColor: palette.inkFaint,
   },
   buttonText: {
-    color: "#fff",
-    fontWeight: "600",
+    color: palette.surface,
+    fontFamily: typography.bodyMedium,
     fontSize: 16,
   },
   cancel: {
@@ -122,7 +176,8 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   cancelText: {
-    color: "#888",
+    color: palette.inkSoft,
+    fontFamily: typography.body,
     fontSize: 16,
   },
 });

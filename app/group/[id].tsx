@@ -1,44 +1,71 @@
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { useState } from "react";
-import { FlatList, Pressable, StyleSheet, Text, View } from "react-native";
+import { useEffect, useState } from "react";
+import { Pressable, StyleSheet, Text, View } from "react-native";
 import AddExpenseModal from "../../src/components/AddExpenseModal";
+import AppScreen from "../../src/components/AppScreen";
 import {
   calculateBalances,
   getUserBalance,
   simplifyDebts,
 } from "../../src/lib/settlement";
+import { useAuth } from "../../src/providers/AuthProvider";
 import { useStore } from "../../src/store/useStore";
+import { palette, radii, shadows, typography } from "../../src/theme";
 
 export default function GroupScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const [modalOpen, setModalOpen] = useState(false);
   const markSettled = useStore((s) => s.markSettled);
+  const { user } = useAuth();
+
+  const subscribeToGroup = useStore((s) => s.subscribeToGroup);
+
+  useEffect(() => {
+    const unsubscribe = subscribeToGroup(id);
+    return unsubscribe;
+  }, [id]);
 
   const group = useStore((s) => s.groups.find((g) => g.id === id));
 
   if (!group) {
     return (
-      <View style={styles.container}>
-        <Text>Group not found.</Text>
-      </View>
+      <AppScreen contentContainerStyle={styles.missingState}>
+        <Text style={styles.missingTitle}>Group not found</Text>
+        <Text style={styles.missingText}>
+          This group may have been removed or the route is no longer valid.
+        </Text>
+      </AppScreen>
     );
   }
-const balances = calculateBalances(group.expenses, group.settlements);
+  const balances = calculateBalances(group.expenses, group.settlements);
   const settlements = simplifyDebts(balances);
-  const currentUser = group.members[0]; // temporary until auth
+  const currentUser = user?.email ?? group.members[0];
   const userBalance = getUserBalance(balances, currentUser);
+
   return (
-    <View style={styles.container}>
-      {/* Header */}
+    <AppScreen scroll contentContainerStyle={styles.container}>
       <Pressable onPress={() => router.back()} style={styles.back}>
-        <Text style={styles.backText}>← Back</Text>
+        <Text style={styles.backText}>Back</Text>
       </Pressable>
 
-      <Text style={styles.heading}>{group.name}</Text>
-      <Text style={styles.members}>{group.members.join(", ")}</Text>
+      <View style={styles.heroCard}>
+        <Text style={styles.eyebrow}>Group overview</Text>
+        <Text style={styles.heading}>{group.name}</Text>
+        <Text style={styles.members}>{group.members.join(" • ")}</Text>
 
-      {/* Balance Summary */}
+        <View style={styles.heroStats}>
+          <View style={styles.heroStatCard}>
+            <Text style={styles.heroStatValue}>{group.expenses.length}</Text>
+            <Text style={styles.heroStatLabel}>Expenses</Text>
+          </View>
+          <View style={styles.heroStatCard}>
+            <Text style={styles.heroStatValue}>{settlements.length}</Text>
+            <Text style={styles.heroStatLabel}>Open settlements</Text>
+          </View>
+        </View>
+      </View>
+
       <View
         style={[
           styles.balanceCard,
@@ -49,6 +76,7 @@ const balances = calculateBalances(group.expenses, group.settlements);
               : styles.balanceZero,
         ]}
       >
+        <Text style={styles.balanceEyebrow}>Balance for {currentUser}</Text>
         <Text style={styles.balanceLabel}>
           {userBalance > 0
             ? "You are owed"
@@ -56,192 +84,349 @@ const balances = calculateBalances(group.expenses, group.settlements);
               ? "You owe"
               : "You are settled up"}
         </Text>
-        {userBalance !== 0 && (
+        {userBalance !== 0 ? (
           <Text style={styles.balanceAmount}>
             ₦{Math.abs(userBalance).toLocaleString()}
+          </Text>
+        ) : (
+          <Text style={styles.balanceZeroText}>
+            Nothing outstanding right now
           </Text>
         )}
       </View>
 
-      {/* Settlements */}
-      <Text style={styles.sectionTitle}>Settlements</Text>
-      {settlements.map((s, i) => (
-        <View key={i} style={styles.settlementCard}>
-          <View>
-            <Text style={styles.settlementText}>
-              <Text style={styles.name}>{s.from}</Text>
-              {" owes "}
-              <Text style={styles.name}>{s.to}</Text>
-            </Text>
-            <Text style={styles.amount}>₦{s.amount.toLocaleString()}</Text>
-          </View>
-          <Pressable
-            onPress={() => markSettled(group.id, s.from, s.to, s.amount)}
-            style={styles.settleButton}
-          >
-            <Text style={styles.settleButtonText}>Mark Settled</Text>
-          </Pressable>
-        </View>
-      ))}
+      <View style={styles.sectionHeader}>
+        <Text style={styles.sectionTitle}>Suggested settlements</Text>
+        <Text style={styles.sectionHint}>Tap once payment is completed</Text>
+      </View>
 
-      {/* Expenses */}
-      <Text style={styles.sectionTitle}>Expenses</Text>
-      <FlatList
-        data={group.expenses}
-        keyExtractor={(item) => item.id}
-        renderItem={({ item }) => (
-          <View style={styles.expenseCard}>
-            <View>
-              <Text style={styles.expensePaidBy}>{item.paidBy} paid</Text>
+      {settlements.length > 0 ? (
+        settlements.map((settlement, index) => (
+          <View
+            key={`${settlement.from}-${settlement.to}-${index}`}
+            style={styles.settlementCard}
+          >
+            <View style={styles.settlementContent}>
+              <Text style={styles.settlementText}>
+                <Text style={styles.name}>{settlement.from}</Text>
+                {" owes "}
+                <Text style={styles.name}>{settlement.to}</Text>
+              </Text>
+              <Text style={styles.amount}>
+                ₦{settlement.amount.toLocaleString()}
+              </Text>
+            </View>
+            <Pressable
+              onPress={() =>
+                markSettled(
+                  group.id,
+                  settlement.from,
+                  settlement.to,
+                  settlement.amount,
+                )
+              }
+              style={styles.settleButton}
+            >
+              <Text style={styles.settleButtonText}>Mark Settled</Text>
+            </Pressable>
+          </View>
+        ))
+      ) : (
+        <View style={styles.emptyCard}>
+          <Text style={styles.emptyTitle}>All settled</Text>
+          <Text style={styles.emptyText}>
+            Once expenses create an outstanding balance, recommended settlements
+            will appear here.
+          </Text>
+        </View>
+      )}
+
+      <View style={styles.sectionHeader}>
+        <Text style={styles.sectionTitle}>Expense ledger</Text>
+        <Text style={styles.sectionHint}>
+          Every item is split evenly for now
+        </Text>
+      </View>
+
+      {group.expenses.length > 0 ? (
+        group.expenses.map((expense) => (
+          <View key={expense.id} style={styles.expenseCard}>
+            <View style={styles.expenseInfo}>
+              <Text style={styles.expensePaidBy}>{expense.paidBy} paid</Text>
               <Text style={styles.expenseParticipants}>
-                {item.participants.join(", ")}
+                Split across {expense.participants.join(", ")}
               </Text>
             </View>
             <Text style={styles.expenseAmount}>
-              ₦{item.amount.toLocaleString()}
+              ₦{expense.amount.toLocaleString()}
             </Text>
           </View>
-        )}
-        ListEmptyComponent={
-          <Text style={styles.empty}>No expenses added yet.</Text>
-        }
-      />
+        ))
+      ) : (
+        <View style={styles.emptyCard}>
+          <Text style={styles.emptyTitle}>No expenses yet</Text>
+          <Text style={styles.emptyText}>
+            Add the first payment to start calculating balances for this group.
+          </Text>
+        </View>
+      )}
 
-      {/* Add Expense Button */}
       <Pressable onPress={() => setModalOpen(true)} style={styles.button}>
-        <Text style={styles.buttonText}>+ Add Expense</Text>
+        <Text style={styles.buttonText}>Add Expense</Text>
       </Pressable>
 
       <AddExpenseModal open={modalOpen} setOpen={setModalOpen} group={group} />
-    </View>
+    </AppScreen>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
+    paddingTop: 6,
+  },
+  missingState: {
     flex: 1,
-    padding: 24,
-    paddingTop: 60,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  missingTitle: {
+    fontFamily: typography.display,
+    fontSize: 28,
+    color: palette.ink,
+    marginBottom: 10,
+  },
+  missingText: {
+    fontFamily: typography.body,
+    fontSize: 15,
+    lineHeight: 22,
+    color: palette.inkSoft,
+    textAlign: "center",
   },
   back: {
-    marginBottom: 16,
+    alignSelf: "flex-start",
+    backgroundColor: palette.surface,
+    borderRadius: radii.pill,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderWidth: 1,
+    borderColor: palette.line,
+    marginBottom: 20,
   },
   backText: {
-    fontSize: 16,
-    color: "#888",
+    fontFamily: typography.bodyMedium,
+    fontSize: 13,
+    color: palette.ink,
+  },
+  heroCard: {
+    backgroundColor: palette.ink,
+    borderRadius: radii.lg,
+    padding: 24,
+    marginBottom: 18,
+    ...shadows.card,
+  },
+  eyebrow: {
+    fontFamily: typography.bodyMedium,
+    color: palette.accentSoft,
+    fontSize: 12,
+    letterSpacing: 2,
+    textTransform: "uppercase",
+    marginBottom: 10,
   },
   heading: {
-    fontSize: 32,
-    fontWeight: "bold",
+    fontFamily: typography.display,
+    fontSize: 34,
+    lineHeight: 38,
+    color: palette.surface,
   },
   members: {
+    fontFamily: typography.body,
     fontSize: 14,
-    color: "#888",
-    marginTop: 4,
-    marginBottom: 24,
+    color: "#D8D1C7",
+    marginTop: 10,
+  },
+  heroStats: {
+    flexDirection: "row",
+    gap: 12,
+    marginTop: 24,
+  },
+  heroStatCard: {
+    flex: 1,
+    backgroundColor: "rgba(255,255,255,0.08)",
+    borderRadius: radii.md,
+    padding: 16,
+  },
+  heroStatValue: {
+    fontFamily: typography.display,
+    fontSize: 26,
+    color: palette.surface,
+    marginBottom: 6,
+  },
+  heroStatLabel: {
+    fontFamily: typography.body,
+    fontSize: 13,
+    color: "#D8D1C7",
   },
   sectionTitle: {
-    fontSize: 18,
-    fontWeight: "600",
+    fontFamily: typography.display,
+    fontSize: 26,
+    color: palette.ink,
+  },
+  sectionHeader: {
+    marginTop: 14,
     marginBottom: 12,
-    marginTop: 8,
+  },
+  sectionHint: {
+    fontFamily: typography.body,
+    fontSize: 13,
+    color: palette.inkSoft,
+    marginTop: 4,
   },
   settlementCard: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    padding: 14,
-    borderRadius: 12,
-    backgroundColor: "#f5f5f5",
-    marginBottom: 8,
+    backgroundColor: palette.surface,
+    padding: 18,
+    borderRadius: radii.md,
+    borderWidth: 1,
+    borderColor: palette.line,
+    marginBottom: 12,
+    ...shadows.card,
+  },
+  settlementContent: {
+    marginBottom: 14,
   },
   settlementText: {
+    fontFamily: typography.body,
     fontSize: 15,
-    color: "#333",
+    color: palette.inkSoft,
   },
   name: {
-    fontWeight: "600",
+    fontFamily: typography.bodyMedium,
+    color: palette.ink,
   },
   amount: {
+    fontFamily: typography.display,
     fontSize: 16,
-    fontWeight: "700",
-    color: "#000",
+    color: palette.ink,
+    marginTop: 8,
   },
   expenseCard: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    padding: 14,
+    padding: 18,
     borderWidth: 1,
-    borderColor: "#e0e0e0",
-    borderRadius: 12,
-    marginBottom: 8,
+    borderColor: palette.line,
+    borderRadius: radii.md,
+    marginBottom: 12,
+    backgroundColor: palette.surface,
+    ...shadows.card,
+  },
+  expenseInfo: {
+    flex: 1,
+    paddingRight: 18,
   },
   expensePaidBy: {
+    fontFamily: typography.bodyMedium,
     fontSize: 15,
-    fontWeight: "600",
+    color: palette.ink,
   },
   expenseParticipants: {
+    fontFamily: typography.body,
     fontSize: 13,
-    color: "#888",
-    marginTop: 2,
+    color: palette.inkSoft,
+    marginTop: 6,
   },
   expenseAmount: {
+    fontFamily: typography.display,
     fontSize: 16,
-    fontWeight: "700",
+    color: palette.ink,
   },
-  empty: {
-    color: "#aaa",
-    marginBottom: 16,
+  emptyCard: {
+    backgroundColor: palette.surface,
+    borderRadius: radii.md,
+    borderWidth: 1,
+    borderColor: palette.line,
+    padding: 20,
+    ...shadows.card,
+  },
+  emptyTitle: {
+    fontFamily: typography.display,
+    fontSize: 22,
+    color: palette.ink,
+    marginBottom: 8,
+  },
+  emptyText: {
+    fontFamily: typography.body,
+    fontSize: 14,
+    lineHeight: 21,
+    color: palette.inkSoft,
   },
   button: {
-    backgroundColor: "#000",
+    backgroundColor: palette.accent,
     padding: 16,
-    borderRadius: 12,
+    borderRadius: radii.pill,
     alignItems: "center",
-    marginTop: 12,
+    marginTop: 18,
+    ...shadows.card,
   },
   buttonText: {
-    color: "#fff",
-    fontWeight: "600",
+    color: palette.surface,
+    fontFamily: typography.bodyMedium,
     fontSize: 16,
   },
   balanceCard: {
     padding: 20,
-    borderRadius: 16,
-    marginBottom: 24,
-    alignItems: "center",
+    borderRadius: radii.md,
+    marginBottom: 10,
+    borderWidth: 1,
+    ...shadows.card,
+  },
+  balanceEyebrow: {
+    fontFamily: typography.bodyMedium,
+    fontSize: 12,
+    letterSpacing: 1.6,
+    textTransform: "uppercase",
+    color: palette.inkSoft,
+    marginBottom: 12,
   },
   balancePositive: {
-    backgroundColor: "#e6f4ea",
+    backgroundColor: palette.positiveSoft,
+    borderColor: "#CFE5D9",
   },
   balanceNegative: {
-    backgroundColor: "#fce8e6",
+    backgroundColor: palette.negativeSoft,
+    borderColor: "#EDD2CC",
   },
   balanceZero: {
-    backgroundColor: "#f5f5f5",
+    backgroundColor: palette.neutralSoft,
+    borderColor: palette.line,
   },
   balanceLabel: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: "#333",
-    marginBottom: 4,
+    fontFamily: typography.display,
+    fontSize: 26,
+    color: palette.ink,
   },
   balanceAmount: {
-    fontSize: 28,
-    fontWeight: "bold",
-    color: "#000",
+    fontFamily: typography.display,
+    fontSize: 34,
+    color: palette.ink,
+    marginTop: 10,
+  },
+  balanceZeroText: {
+    fontFamily: typography.body,
+    fontSize: 14,
+    color: palette.inkSoft,
+    marginTop: 10,
   },
   settleButton: {
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: "#000",
+    alignSelf: "flex-start",
+    backgroundColor: palette.ink,
+    borderRadius: radii.pill,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
   },
   settleButtonText: {
     fontSize: 13,
-    fontWeight: "600",
-    color: "#000",
+    fontFamily: typography.bodyMedium,
+    color: palette.surface,
   },
 });

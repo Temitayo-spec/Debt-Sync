@@ -9,8 +9,8 @@ import {
   Platform,
 } from "react-native";
 import { useState } from "react";
-import { useStore } from "../store/useStore";
-import { Group } from "../store/useStore";
+import { Group, useStore } from "../store/useStore";
+import { palette, radii, shadows, typography } from "../theme";
 
 interface Props {
   open: boolean;
@@ -45,12 +45,17 @@ export default function AddExpenseModal({ open, setOpen, group }: Props) {
         behavior={Platform.OS === "ios" ? "padding" : undefined}
       >
         <View style={styles.sheet}>
+          <View style={styles.handle} />
           <Text style={styles.heading}>Add Expense</Text>
+          <Text style={styles.subheading}>
+            Capture who paid and Debt Sync will split the cost evenly across
+            everyone in this group.
+          </Text>
 
-          {/* Amount */}
           <Text style={styles.label}>Amount (₦)</Text>
           <TextInput
             placeholder="e.g. 5000"
+            placeholderTextColor={palette.inkFaint}
             keyboardType="numeric"
             value={amount}
             onChangeText={setAmount}
@@ -58,7 +63,6 @@ export default function AddExpenseModal({ open, setOpen, group }: Props) {
             autoFocus
           />
 
-          {/* Paid By */}
           <Text style={styles.label}>Paid by</Text>
           <View style={styles.memberRow}>
             {group.members.map((member) => (
@@ -82,7 +86,6 @@ export default function AddExpenseModal({ open, setOpen, group }: Props) {
             ))}
           </View>
 
-          {/* Actions */}
           <Pressable
             onPress={handleAdd}
             style={[
@@ -107,33 +110,57 @@ const styles = StyleSheet.create({
   overlay: {
     flex: 1,
     justifyContent: "flex-end",
-    backgroundColor: "rgba(0,0,0,0.4)",
+    backgroundColor: "rgba(28, 25, 23, 0.26)",
   },
   sheet: {
-    backgroundColor: "#fff",
+    backgroundColor: palette.surface,
     padding: 24,
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
+    borderTopLeftRadius: radii.lg,
+    borderTopRightRadius: radii.lg,
     paddingBottom: 40,
+    borderWidth: 1,
+    borderColor: palette.line,
+    ...shadows.card,
+  },
+  handle: {
+    width: 54,
+    height: 5,
+    borderRadius: radii.pill,
+    backgroundColor: palette.line,
+    alignSelf: "center",
+    marginBottom: 18,
   },
   heading: {
+    fontFamily: typography.display,
     fontSize: 22,
-    fontWeight: "bold",
+    color: palette.ink,
+  },
+  subheading: {
+    fontFamily: typography.body,
+    fontSize: 14,
+    lineHeight: 21,
+    color: palette.inkSoft,
+    marginTop: 8,
     marginBottom: 24,
   },
   label: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: "#333",
-    marginBottom: 8,
+    fontFamily: typography.bodyMedium,
+    fontSize: 12,
+    color: palette.inkSoft,
+    marginBottom: 10,
+    letterSpacing: 1.5,
+    textTransform: "uppercase",
   },
   input: {
     borderWidth: 1,
-    borderColor: "#e0e0e0",
-    borderRadius: 12,
+    borderColor: palette.line,
+    borderRadius: radii.sm,
     padding: 14,
     fontSize: 16,
+    fontFamily: typography.body,
+    color: palette.ink,
     marginBottom: 20,
+    backgroundColor: palette.surfaceMuted,
   },
   memberRow: {
     flexDirection: "row",
@@ -144,33 +171,36 @@ const styles = StyleSheet.create({
   memberChip: {
     paddingHorizontal: 14,
     paddingVertical: 8,
-    borderRadius: 20,
+    borderRadius: radii.pill,
     borderWidth: 1,
-    borderColor: "#e0e0e0",
+    borderColor: palette.line,
+    backgroundColor: palette.surfaceMuted,
   },
   memberChipActive: {
-    backgroundColor: "#000",
-    borderColor: "#000",
+    backgroundColor: palette.ink,
+    borderColor: palette.ink,
   },
   memberChipText: {
+    fontFamily: typography.bodyMedium,
     fontSize: 14,
-    color: "#333",
+    color: palette.ink,
   },
   memberChipTextActive: {
-    color: "#fff",
+    color: palette.surface,
   },
   button: {
-    backgroundColor: "#000",
+    backgroundColor: palette.accent,
     padding: 16,
-    borderRadius: 12,
+    borderRadius: radii.pill,
     alignItems: "center",
+    ...shadows.card,
   },
   buttonDisabled: {
-    backgroundColor: "#ccc",
+    backgroundColor: palette.inkFaint,
   },
   buttonText: {
-    color: "#fff",
-    fontWeight: "600",
+    color: palette.surface,
+    fontFamily: typography.bodyMedium,
     fontSize: 16,
   },
   cancel: {
@@ -178,7 +208,8 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   cancelText: {
-    color: "#888",
+    color: palette.inkSoft,
+    fontFamily: typography.body,
     fontSize: 16,
   },
 });
