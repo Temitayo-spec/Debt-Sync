@@ -9,6 +9,7 @@ export interface Expense {
   participants: string[];
   splitMode: SplitMode;
   splits: Record<string, number>;
+  createdAt: string;
 }
 
 export interface Transaction {
@@ -24,6 +25,7 @@ export interface Settlement {
   amount: number;
   paymentRef?: string;
   paymentMethod?: "manual" | "paystack";
+  createdAt: string;
 }
 
 function getPersonShare(expense: Expense, person: string): number {
@@ -122,4 +124,33 @@ export const CATEGORIES = [
 
 export function getCategoryEmoji(label: string): string {
   return CATEGORIES.find((c) => c.label === label)?.emoji ?? "📦";
+}
+
+export type ActivityItem =
+  | { kind: "expense"; data: Expense }
+  | { kind: "settlement"; data: Settlement };
+
+export function getActivityFeed(
+  expenses: Expense[],
+  settlements: Settlement[],
+): ActivityItem[] {
+  const items: ActivityItem[] = [
+    ...expenses.map((e) => ({ kind: "expense" as const, data: e })),
+    ...settlements.map((s) => ({ kind: "settlement" as const, data: s })),
+  ];
+  return items.sort(
+    (a, b) => new Date(b.data.createdAt).getTime() - new Date(a.data.createdAt).getTime(),
+  );
+}
+
+export function timeAgo(dateStr: string): string {
+  if (!dateStr) return "";
+  const diff = Date.now() - new Date(dateStr).getTime();
+  const minutes = Math.floor(diff / 60000);
+  if (minutes < 1) return "just now";
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  return `${days}d ago`;
 }

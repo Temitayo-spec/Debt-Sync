@@ -1,14 +1,16 @@
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useState } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Linking, Pressable, StyleSheet, Text, View } from "react-native";
 import AddExpenseModal from "../../src/components/AddExpenseModal";
 import AppScreen from "../../src/components/AppScreen";
 import PaystackSheet from "../../src/components/PaystackSheet";
 import {
   calculateBalances,
+  getActivityFeed,
   getCategoryEmoji,
   getUserBalance,
   simplifyDebts,
+  timeAgo,
   Transaction,
 } from "../../src/lib/settlement";
 import { useAuth } from "../../src/providers/AuthProvider";
@@ -46,6 +48,7 @@ export default function GroupScreen() {
   const settlements = simplifyDebts(balances);
   const currentUser = user?.email ?? group.members[0];
   const userBalance = getUserBalance(balances, currentUser);
+  const activityFeed = getActivityFeed(group.expenses, group.settlements);
 
   return (
     <AppScreen scroll contentContainerStyle={styles.container}>
@@ -122,19 +125,32 @@ export default function GroupScreen() {
             </View>
             <View style={styles.settlementActions}>
               <Pressable
-                onPress={() => setActivePayment(settlement)}
-                style={styles.payButton}
+                onPress={() => {
+                  const msg = encodeURIComponent(
+                    `Hey! You owe ₦${settlement.amount.toLocaleString()} to ${settlement.to} on Debt Sync. Settle up when you can 💸`,
+                  );
+                  Linking.openURL(`whatsapp://send?text=${msg}`);
+                }}
+                style={styles.nudgeButton}
               >
-                <Text style={styles.payButtonText}>Pay Now</Text>
+                <Text style={styles.nudgeButtonText}>Nudge 💬</Text>
               </Pressable>
-              <Pressable
-                onPress={() =>
-                  markSettled(group.id, settlement.from, settlement.to, settlement.amount)
-                }
-                style={styles.settleButton}
-              >
-                <Text style={styles.settleButtonText}>Mark Settled</Text>
-              </Pressable>
+              <View style={styles.settlementPrimaryActions}>
+                <Pressable
+                  onPress={() => setActivePayment(settlement)}
+                  style={styles.payButton}
+                >
+                  <Text style={styles.payButtonText}>Pay Now</Text>
+                </Pressable>
+                <Pressable
+                  onPress={() =>
+                    markSettled(group.id, settlement.from, settlement.to, settlement.amount)
+                  }
+                  style={styles.settleButton}
+                >
+                  <Text style={styles.settleButtonText}>Mark Settled</Text>
+                </Pressable>
+              </View>
             </View>
           </View>
         ))
@@ -186,6 +202,61 @@ export default function GroupScreen() {
       <Pressable onPress={() => setModalOpen(true)} style={styles.button}>
         <Text style={styles.buttonText}>Add Expense</Text>
       </Pressable>
+
+      {activityFeed.length > 0 && (
+        <>
+          <View style={[styles.sectionHeader, { marginTop: 28 }]}>
+            <Text style={styles.sectionTitle}>Activity</Text>
+            <Text style={styles.sectionHint}>Everything that's happened in this group</Text>
+          </View>
+
+          {activityFeed.map((item, index) =>
+            item.kind === "expense" ? (
+              <View key={item.data.id} style={styles.activityCard}>
+                <View style={styles.activityLeft}>
+                  <Text style={styles.activityEmoji}>
+                    {getCategoryEmoji(item.data.category)}
+                  </Text>
+                </View>
+                <View style={styles.activityBody}>
+                  <Text style={styles.activityTitle}>{item.data.title}</Text>
+                  <Text style={styles.activitySub}>
+                    {item.data.paidBy} paid · {item.data.category}
+                  </Text>
+                </View>
+                <View style={styles.activityRight}>
+                  <Text style={styles.activityAmount}>
+                    ₦{item.data.amount.toLocaleString()}
+                  </Text>
+                  <Text style={styles.activityTime}>{timeAgo(item.data.createdAt)}</Text>
+                </View>
+              </View>
+            ) : (
+              <View key={item.data.id} style={styles.activityCard}>
+                <View style={styles.activityLeft}>
+                  <Text style={styles.activityEmoji}>
+                    {item.data.paymentMethod === "paystack" ? "💳" : "✅"}
+                  </Text>
+                </View>
+                <View style={styles.activityBody}>
+                  <Text style={styles.activityTitle}>
+                    {item.data.from} settled with {item.data.to}
+                  </Text>
+                  <Text style={styles.activitySub}>
+                    {item.data.paymentMethod === "paystack" ? "Paid via Paystack" : "Marked manually"}
+                  </Text>
+                </View>
+                <View style={styles.activityRight}>
+                  <Text style={[styles.activityAmount, styles.activityAmountSettled]}>
+                    ₦{item.data.amount.toLocaleString()}
+                  </Text>
+                  <Text style={styles.activityTime}>{timeAgo(item.data.createdAt)}</Text>
+                </View>
+              </View>
+            ),
+          )}
+        </>
+      )}
 
       <AddExpenseModal open={modalOpen} setOpen={setModalOpen} group={group} />
 
@@ -450,7 +521,80 @@ const styles = StyleSheet.create({
     color: palette.inkSoft,
     marginTop: 10,
   },
+  activityCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: palette.surface,
+    borderWidth: 1,
+    borderColor: palette.line,
+    borderRadius: radii.md,
+    padding: 14,
+    marginBottom: 10,
+    gap: 12,
+    ...shadows.card,
+  },
+  activityLeft: {
+    width: 38,
+    height: 38,
+    borderRadius: radii.sm,
+    backgroundColor: palette.surfaceMuted,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  activityEmoji: {
+    fontSize: 18,
+  },
+  activityBody: {
+    flex: 1,
+    gap: 3,
+  },
+  activityTitle: {
+    fontFamily: typography.bodyMedium,
+    fontSize: 14,
+    color: palette.ink,
+  },
+  activitySub: {
+    fontFamily: typography.body,
+    fontSize: 12,
+    color: palette.inkSoft,
+  },
+  activityRight: {
+    alignItems: "flex-end",
+    gap: 3,
+  },
+  activityAmount: {
+    fontFamily: typography.display,
+    fontSize: 14,
+    color: palette.ink,
+  },
+  activityAmountSettled: {
+    color: palette.positive,
+  },
+  activityTime: {
+    fontFamily: typography.body,
+    fontSize: 11,
+    color: palette.inkFaint,
+  },
   settlementActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 8,
+  },
+  nudgeButton: {
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+    borderRadius: radii.pill,
+    borderWidth: 1,
+    borderColor: palette.line,
+    backgroundColor: palette.surfaceMuted,
+  },
+  nudgeButtonText: {
+    fontSize: 13,
+    fontFamily: typography.bodyMedium,
+    color: palette.inkSoft,
+  },
+  settlementPrimaryActions: {
     flexDirection: "row",
     gap: 8,
   },

@@ -96,6 +96,7 @@ export const useStore = create<Store>()(
                   participants: e.participants,
                   splitMode: (e.split_mode ?? "even") as SplitMode,
                   splits: (e.splits ?? {}) as Record<string, number>,
+                  createdAt: e.created_at ?? new Date().toISOString(),
                 })) ?? [],
               settlements:
                 settlements?.map((s) => ({
@@ -105,6 +106,7 @@ export const useStore = create<Store>()(
                   amount: s.amount,
                   paymentRef: s.payment_ref ?? undefined,
                   paymentMethod: s.payment_method ?? "manual",
+                  createdAt: s.created_at ?? new Date().toISOString(),
                 })) ?? [],
             };
           }),
@@ -179,6 +181,7 @@ export const useStore = create<Store>()(
           participants: data.participants,
           splitMode: (data.split_mode ?? "even") as SplitMode,
           splits: (data.splits ?? {}) as Record<string, number>,
+          createdAt: data.created_at ?? new Date().toISOString(),
         };
 
         set((state) => ({
@@ -213,6 +216,7 @@ export const useStore = create<Store>()(
           amount: data.amount,
           paymentRef: data.payment_ref ?? undefined,
           paymentMethod: data.payment_method ?? "manual",
+          createdAt: data.created_at ?? new Date().toISOString(),
         };
 
         set((state) => ({
