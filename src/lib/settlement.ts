@@ -1,8 +1,14 @@
+export type SplitMode = "even" | "exact" | "percent" | "shares";
+
 export interface Expense {
   id: string;
+  title: string;
+  category: string;
   amount: number;
   paidBy: string;
   participants: string[];
+  splitMode: SplitMode;
+  splits: Record<string, number>;
 }
 
 export interface Transaction {
@@ -16,6 +22,24 @@ export interface Settlement {
   from: string;
   to: string;
   amount: number;
+  paymentRef?: string;
+  paymentMethod?: "manual" | "paystack";
+}
+
+function getPersonShare(expense: Expense, person: string): number {
+  const { amount, participants, splitMode, splits } = expense;
+  switch (splitMode) {
+    case "even":
+      return amount / participants.length;
+    case "exact":
+      return splits[person] ?? 0;
+    case "percent":
+      return amount * ((splits[person] ?? 0) / 100);
+    case "shares": {
+      const totalShares = Object.values(splits).reduce((a, b) => a + b, 0);
+      return totalShares > 0 ? amount * ((splits[person] ?? 0) / totalShares) : 0;
+    }
+  }
 }
 
 export function calculateBalances(
@@ -24,18 +48,19 @@ export function calculateBalances(
 ): Record<string, number> {
   const balances: Record<string, number> = {};
 
-  for (const { paidBy, amount, participants } of expenses) {
-    const share = amount / participants.length;
-    balances[paidBy] = (balances[paidBy] || 0) + amount - share;
+  for (const expense of expenses) {
+    const { paidBy, amount, participants } = expense;
+    const payerShare = getPersonShare(expense, paidBy);
+    balances[paidBy] = (balances[paidBy] || 0) + amount - payerShare;
 
     for (const person of participants) {
       if (person !== paidBy) {
+        const share = getPersonShare(expense, person);
         balances[person] = (balances[person] || 0) - share;
       }
     }
   }
 
-  // Apply settlements as direct balance offsets
   for (const { from, to, amount } of settlements) {
     balances[from] = (balances[from] || 0) + amount;
     balances[to] = (balances[to] || 0) - amount;
@@ -49,8 +74,8 @@ export function simplifyDebts(balances: Record<string, number>): Transaction[] {
   const debtors: { person: string; amount: number }[] = [];
 
   for (const [person, balance] of Object.entries(balances)) {
-    if (balance > 0) creditors.push({ person, amount: balance });
-    if (balance < 0) debtors.push({ person, amount: -balance });
+    if (balance > 0.01) creditors.push({ person, amount: balance });
+    if (balance < -0.01) debtors.push({ person, amount: -balance });
   }
 
   const transactions: Transaction[] = [];
@@ -69,8 +94,8 @@ export function simplifyDebts(balances: Record<string, number>): Transaction[] {
     creditor.amount -= settled;
     debtor.amount -= settled;
 
-    if (creditor.amount === 0) creditors.shift();
-    if (debtor.amount === 0) debtors.shift();
+    if (creditor.amount < 0.01) creditors.shift();
+    if (debtor.amount < 0.01) debtors.shift();
   }
 
   return transactions;
@@ -81,4 +106,20 @@ export function getUserBalance(
   user: string,
 ): number {
   return Math.round(balances[user] || 0);
+}
+
+export const CATEGORIES = [
+  { label: "Food", emoji: "🍕" },
+  { label: "Transport", emoji: "🚗" },
+  { label: "Rent", emoji: "🏠" },
+  { label: "Entertainment", emoji: "🎉" },
+  { label: "Groceries", emoji: "🛒" },
+  { label: "Travel", emoji: "✈️" },
+  { label: "Utilities", emoji: "💡" },
+  { label: "Health", emoji: "🏥" },
+  { label: "Other", emoji: "📦" },
+] as const;
+
+export function getCategoryEmoji(label: string): string {
+  return CATEGORIES.find((c) => c.label === label)?.emoji ?? "📦";
 }

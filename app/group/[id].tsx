@@ -3,10 +3,13 @@ import { useEffect, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import AddExpenseModal from "../../src/components/AddExpenseModal";
 import AppScreen from "../../src/components/AppScreen";
+import PaystackSheet from "../../src/components/PaystackSheet";
 import {
   calculateBalances,
+  getCategoryEmoji,
   getUserBalance,
   simplifyDebts,
+  Transaction,
 } from "../../src/lib/settlement";
 import { useAuth } from "../../src/providers/AuthProvider";
 import { useStore } from "../../src/store/useStore";
@@ -16,6 +19,7 @@ export default function GroupScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const [modalOpen, setModalOpen] = useState(false);
+  const [activePayment, setActivePayment] = useState<Transaction | null>(null);
   const markSettled = useStore((s) => s.markSettled);
   const { user } = useAuth();
 
@@ -116,19 +120,22 @@ export default function GroupScreen() {
                 ₦{settlement.amount.toLocaleString()}
               </Text>
             </View>
-            <Pressable
-              onPress={() =>
-                markSettled(
-                  group.id,
-                  settlement.from,
-                  settlement.to,
-                  settlement.amount,
-                )
-              }
-              style={styles.settleButton}
-            >
-              <Text style={styles.settleButtonText}>Mark Settled</Text>
-            </Pressable>
+            <View style={styles.settlementActions}>
+              <Pressable
+                onPress={() => setActivePayment(settlement)}
+                style={styles.payButton}
+              >
+                <Text style={styles.payButtonText}>Pay Now</Text>
+              </Pressable>
+              <Pressable
+                onPress={() =>
+                  markSettled(group.id, settlement.from, settlement.to, settlement.amount)
+                }
+                style={styles.settleButton}
+              >
+                <Text style={styles.settleButtonText}>Mark Settled</Text>
+              </Pressable>
+            </View>
           </View>
         ))
       ) : (
@@ -152,9 +159,14 @@ export default function GroupScreen() {
         group.expenses.map((expense) => (
           <View key={expense.id} style={styles.expenseCard}>
             <View style={styles.expenseInfo}>
+              <Text style={styles.expenseTitle}>
+                {getCategoryEmoji(expense.category)} {expense.title}
+              </Text>
               <Text style={styles.expensePaidBy}>{expense.paidBy} paid</Text>
               <Text style={styles.expenseParticipants}>
-                Split across {expense.participants.join(", ")}
+                {expense.splitMode === "even" ? "Split evenly" : `Custom split (${expense.splitMode})`}
+                {" · "}
+                {expense.participants.join(", ")}
               </Text>
             </View>
             <Text style={styles.expenseAmount}>
@@ -176,6 +188,21 @@ export default function GroupScreen() {
       </Pressable>
 
       <AddExpenseModal open={modalOpen} setOpen={setModalOpen} group={group} />
+
+      {activePayment && (
+        <PaystackSheet
+          visible={!!activePayment}
+          amount={activePayment.amount}
+          email={user?.email ?? "user@debtsync.app"}
+          from={activePayment.from}
+          to={activePayment.to}
+          onSuccess={(ref) => {
+            markSettled(group.id, activePayment.from, activePayment.to, activePayment.amount, ref);
+            setActivePayment(null);
+          }}
+          onCancel={() => setActivePayment(null)}
+        />
+      )}
     </AppScreen>
   );
 }
@@ -324,10 +351,16 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingRight: 18,
   },
-  expensePaidBy: {
+  expenseTitle: {
     fontFamily: typography.bodyMedium,
     fontSize: 15,
     color: palette.ink,
+    marginBottom: 4,
+  },
+  expensePaidBy: {
+    fontFamily: typography.body,
+    fontSize: 13,
+    color: palette.inkSoft,
   },
   expenseParticipants: {
     fontFamily: typography.body,
@@ -417,16 +450,33 @@ const styles = StyleSheet.create({
     color: palette.inkSoft,
     marginTop: 10,
   },
+  settlementActions: {
+    flexDirection: "row",
+    gap: 8,
+  },
+  payButton: {
+    backgroundColor: palette.accent,
+    borderRadius: radii.pill,
+    paddingHorizontal: 18,
+    paddingVertical: 10,
+    ...shadows.card,
+  },
+  payButtonText: {
+    fontSize: 13,
+    fontFamily: typography.bodyMedium,
+    color: palette.surface,
+  },
   settleButton: {
-    alignSelf: "flex-start",
-    backgroundColor: palette.ink,
+    backgroundColor: palette.surfaceMuted,
     borderRadius: radii.pill,
     paddingHorizontal: 16,
     paddingVertical: 10,
+    borderWidth: 1,
+    borderColor: palette.line,
   },
   settleButtonText: {
     fontSize: 13,
     fontFamily: typography.bodyMedium,
-    color: palette.surface,
+    color: palette.inkSoft,
   },
 });

@@ -1,7 +1,7 @@
 import { createMMKV } from "react-native-mmkv";
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
-import { Expense, Settlement } from "../lib/settlement";
+import { Expense, Settlement, SplitMode } from "../lib/settlement";
 import { supabase } from "../lib/supabase";
 
 export const storage = createMMKV();
@@ -34,7 +34,7 @@ interface Store {
   fetchGroups: () => Promise<void>;
   createGroup: (name: string) => Promise<void>;
   addExpense: (groupId: string, expense: Omit<Expense, "id">) => Promise<void>;
-  markSettled: (groupId: string, from: string, to: string, amount: number) => Promise<void>;
+  markSettled: (groupId: string, from: string, to: string, amount: number, paymentRef?: string) => Promise<void>;
   subscribeToGroup: (groupId: string) => () => void;
   joinGroup: (inviteCode: string) => Promise<{ error: string | null }>;
 }
@@ -89,9 +89,13 @@ export const useStore = create<Store>()(
               expenses:
                 expenses?.map((e) => ({
                   id: e.id,
+                  title: e.title ?? "Shared expense",
+                  category: e.category ?? "Other",
                   amount: e.amount,
                   paidBy: e.paid_by,
                   participants: e.participants,
+                  splitMode: (e.split_mode ?? "even") as SplitMode,
+                  splits: (e.splits ?? {}) as Record<string, number>,
                 })) ?? [],
               settlements:
                 settlements?.map((s) => ({
@@ -99,6 +103,8 @@ export const useStore = create<Store>()(
                   from: s.from,
                   to: s.to,
                   amount: s.amount,
+                  paymentRef: s.payment_ref ?? undefined,
+                  paymentMethod: s.payment_method ?? "manual",
                 })) ?? [],
             };
           }),
@@ -151,9 +157,13 @@ export const useStore = create<Store>()(
           .from("expenses")
           .insert({
             group_id: groupId,
+            title: expense.title,
+            category: expense.category,
             amount: expense.amount,
             paid_by: expense.paidBy,
             participants: expense.participants,
+            split_mode: expense.splitMode,
+            splits: expense.splitMode !== "even" ? expense.splits : null,
           })
           .select()
           .single();
@@ -162,9 +172,13 @@ export const useStore = create<Store>()(
 
         const newExpense: Expense = {
           id: data.id,
+          title: data.title ?? "Shared expense",
+          category: data.category ?? "Other",
           amount: data.amount,
           paidBy: data.paid_by,
           participants: data.participants,
+          splitMode: (data.split_mode ?? "even") as SplitMode,
+          splits: (data.splits ?? {}) as Record<string, number>,
         };
 
         set((state) => ({
@@ -176,10 +190,17 @@ export const useStore = create<Store>()(
         }));
       },
 
-      markSettled: async (groupId, from, to, amount) => {
+      markSettled: async (groupId, from, to, amount, paymentRef) => {
         const { data, error } = await supabase
           .from("settlements")
-          .insert({ group_id: groupId, from, to, amount })
+          .insert({
+            group_id: groupId,
+            from,
+            to,
+            amount,
+            payment_ref: paymentRef ?? null,
+            payment_method: paymentRef ? "paystack" : "manual",
+          })
           .select()
           .single();
 
@@ -190,6 +211,8 @@ export const useStore = create<Store>()(
           from: data.from,
           to: data.to,
           amount: data.amount,
+          paymentRef: data.payment_ref ?? undefined,
+          paymentMethod: data.payment_method ?? "manual",
         };
 
         set((state) => ({
