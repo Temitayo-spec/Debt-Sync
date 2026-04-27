@@ -7,22 +7,31 @@ import {
   TextInput,
   View,
 } from "react-native";
-import { useState } from "react";
-import { useRouter } from "expo-router";
+import { useEffect, useState } from "react";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import AppScreen from "../src/components/AppScreen";
 import { useStore } from "../src/store/useStore";
 import { palette, radii, shadows, typography } from "../src/theme";
 
 export default function JoinGroup() {
-  const [code, setCode] = useState("");
+  const { code: codeParam } = useLocalSearchParams<{ code?: string }>();
+  const [code, setCode] = useState(codeParam ?? "");
   const [isLoading, setIsLoading] = useState(false);
   const joinGroup = useStore((s) => s.joinGroup);
   const router = useRouter();
 
-  const handleJoin = async () => {
-    if (code.trim().length < 6) return;
+  // auto-join when arriving from a deep link
+  useEffect(() => {
+    if (codeParam && codeParam.trim().length >= 6) {
+      handleJoin(codeParam.trim());
+    }
+  }, [codeParam]);
+
+  const handleJoin = async (overrideCode?: string) => {
+    const target = (overrideCode ?? code).trim();
+    if (target.length < 6) return;
     setIsLoading(true);
-    const { error } = await joinGroup(code);
+    const { error } = await joinGroup(target);
     setIsLoading(false);
 
     if (error) {
@@ -62,7 +71,7 @@ export default function JoinGroup() {
 
         <Pressable
           disabled={isLoading || code.trim().length < 6}
-          onPress={handleJoin}
+          onPress={() => handleJoin()}
           style={[
             styles.button,
             (isLoading || code.trim().length < 6) && styles.buttonDisabled,

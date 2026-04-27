@@ -1,8 +1,9 @@
 import { useRouter } from "expo-router";
 import * as Clipboard from "expo-clipboard";
+import * as Linking from "expo-linking";
 import { useEffect, useState } from "react";
 import { Ionicons } from "@expo/vector-icons";
-import { FlatList, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { FlatList, Pressable, ScrollView, Share, StyleSheet, Text, View } from "react-native";
 import AppScreen from "../src/components/AppScreen";
 import PaymentInfoSheet from "../src/components/PaymentInfoSheet";
 import { supabase } from "../src/lib/supabase";
