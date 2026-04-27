@@ -43,6 +43,10 @@ export interface Group {
 interface Store {
   groups: Group[];
   isSyncing: boolean;
+  isOnline: boolean;
+  pendingActions: PendingAction[];
+  setOnline: (online: boolean) => void;
+  processPendingActions: () => Promise<void>;
   fetchGroups: () => Promise<void>;
   createGroup: (name: string) => Promise<void>;
   addExpense: (groupId: string, expense: Omit<Expense, "id">) => Promise<void>;
@@ -57,6 +61,31 @@ export const useStore = create<Store>()(
     (set, get) => ({
       groups: [],
       isSyncing: false,
+      isOnline: true,
+      pendingActions: [],
+
+      setOnline: (online) => {
+        set({ isOnline: online });
+      },
+
+      processPendingActions: async () => {
+        const { pendingActions } = get();
+        if (!pendingActions.length) return;
+
+        set({ pendingActions: [] });
+
+        for (const action of pendingActions) {
+          if (action.type === "addExpense") {
+            await get().addExpense(action.groupId, action.expense);
+          } else if (action.type === "markSettled") {
+            await get().markSettled(action.groupId, action.from, action.to, action.amount);
+          } else if (action.type === "deleteExpense") {
+            await get().deleteExpense(action.groupId, action.expenseId);
+          }
+        }
+
+        await get().fetchGroups();
+      },
 
       fetchGroups: async () => {
         set({ isSyncing: true });
@@ -182,6 +211,13 @@ export const useStore = create<Store>()(
       },
 
       addExpense: async (groupId, expense) => {
+        if (!get().isOnline) {
+          set((state) => ({
+            pendingActions: [...state.pendingActions, { type: "addExpense", groupId, expense }],
+          }));
+          return;
+        }
+
         const { data, error } = await supabase
           .from("expenses")
           .insert({
@@ -237,6 +273,13 @@ export const useStore = create<Store>()(
       },
 
       markSettled: async (groupId, from, to, amount) => {
+        if (!get().isOnline) {
+          set((state) => ({
+            pendingActions: [...state.pendingActions, { type: "markSettled", groupId, from, to, amount }],
+          }));
+          return;
+        }
+
         const { data, error } = await supabase
           .from("settlements")
           .insert({ group_id: groupId, from, to, amount })
@@ -263,6 +306,13 @@ export const useStore = create<Store>()(
       },
 
       deleteExpense: async (groupId, expenseId) => {
+        if (!get().isOnline) {
+          set((state) => ({
+            pendingActions: [...state.pendingActions, { type: "deleteExpense", groupId, expenseId }],
+          }));
+          return;
+        }
+
         const { error } = await supabase
           .from("expenses")
           .delete()
