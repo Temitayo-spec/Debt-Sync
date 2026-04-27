@@ -1,6 +1,7 @@
 import { useRouter } from "expo-router";
 import * as Clipboard from "expo-clipboard";
 import { useEffect, useState } from "react";
+import { Ionicons } from "@expo/vector-icons";
 import { FlatList, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import AppScreen from "../src/components/AppScreen";
 import PaymentInfoSheet from "../src/components/PaymentInfoSheet";
@@ -44,7 +45,7 @@ export default function Home() {
                 onPress={() => setPaymentInfoOpen(true)}
                 style={styles.iconButton}
               >
-                <Text style={styles.iconButtonText}>🏦</Text>
+                <Ionicons name="card-outline" size={16} color={palette.surface} />
               </Pressable>
               <Pressable
                 onPress={() => supabase.auth.signOut()}
@@ -116,11 +117,52 @@ export default function Home() {
           )}
           ListEmptyComponent={
             <View style={styles.emptyCard}>
-              <Text style={styles.emptyTitle}>No groups yet</Text>
+              <Text style={styles.emptyTitle}>Get started</Text>
               <Text style={styles.emptyText}>
-                Create your first group to start tracking dinners, trips, rent,
-                or any shared expenses.
+                Track shared expenses with friends, family, or colleagues in three steps.
               </Text>
+
+              <View style={styles.steps}>
+                <View style={styles.stepRow}>
+                  <View style={styles.stepNum}>
+                    <Text style={styles.stepNumText}>1</Text>
+                  </View>
+                  <View style={styles.stepBody}>
+                    <Text style={styles.stepTitle}>Set up your profile</Text>
+                    <Text style={styles.stepDesc}>
+                      Tap the card icon above to add your name and bank details so others can pay you.
+                    </Text>
+                  </View>
+                </View>
+
+                <View style={styles.stepDivider} />
+
+                <View style={styles.stepRow}>
+                  <View style={styles.stepNum}>
+                    <Text style={styles.stepNumText}>2</Text>
+                  </View>
+                  <View style={styles.stepBody}>
+                    <Text style={styles.stepTitle}>Create or join a group</Text>
+                    <Text style={styles.stepDesc}>
+                      Create a new group and share the invite code, or paste one you received.
+                    </Text>
+                  </View>
+                </View>
+
+                <View style={styles.stepDivider} />
+
+                <View style={styles.stepRow}>
+                  <View style={styles.stepNum}>
+                    <Text style={styles.stepNumText}>3</Text>
+                  </View>
+                  <View style={styles.stepBody}>
+                    <Text style={styles.stepTitle}>Log expenses & settle</Text>
+                    <Text style={styles.stepDesc}>
+                      Add expenses as they happen. Debt Sync calculates who owes what and shows bank details for quick transfers.
+                    </Text>
+                  </View>
+                </View>
+              </View>
             </View>
           }
         />
@@ -201,10 +243,9 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "rgba(255,255,255,0.15)",
     paddingHorizontal: 12,
-    paddingVertical: 9,
-  },
-  iconButtonText: {
-    fontSize: 16,
+    paddingVertical: 10,
+    alignItems: "center",
+    justifyContent: "center",
   },
   signOutButton: {
     borderRadius: radii.pill,

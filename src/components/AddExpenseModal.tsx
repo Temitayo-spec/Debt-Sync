@@ -10,6 +10,7 @@ import {
   ScrollView,
 } from "react-native";
 import { useState } from "react";
+import { Ionicons } from "@expo/vector-icons";
 import { Group, useStore } from "../store/useStore";
 import { CATEGORIES, SplitMode } from "../lib/settlement";
 import { palette, radii, shadows, typography } from "../theme";
@@ -18,6 +19,7 @@ interface Props {
   open: boolean;
   setOpen: (open: boolean) => void;
   group: Group;
+  editingExpense?: import("../lib/settlement").Expense;
 }
 
 const SPLIT_MODES: { mode: SplitMode; label: string; hint: string }[] = [
@@ -42,7 +44,7 @@ function initSplits(mode: SplitMode, members: string[], totalStr: string): Recor
   return Object.fromEntries(members.map((m) => [m, "1"]));
 }
 
-export default function AddExpenseModal({ open, setOpen, group }: Props) {
+export default function AddExpenseModal({ open, setOpen, group, editingExpense }: Props) {
   const [title, setTitle] = useState("");
   const [category, setCategory] = useState("Food");
   const [amount, setAmount] = useState("");
@@ -50,6 +52,30 @@ export default function AddExpenseModal({ open, setOpen, group }: Props) {
   const [splitMode, setSplitMode] = useState<SplitMode>("even");
   const [splits, setSplits] = useState<Record<string, string>>({});
   const addExpense = useStore((s) => s.addExpense);
+  const updateExpense = useStore((s) => s.updateExpense);
+
+  // pre-populate when editing
+  useEffect(() => {
+    if (open && editingExpense) {
+      setTitle(editingExpense.title);
+      setCategory(editingExpense.category);
+      setAmount(String(editingExpense.amount));
+      setPaidBy(editingExpense.paidBy);
+      setSplitMode(editingExpense.splitMode);
+      setSplits(
+        Object.fromEntries(
+          Object.entries(editingExpense.splits).map(([k, v]) => [k, String(v)]),
+        ),
+      );
+    } else if (open) {
+      setTitle("");
+      setCategory("Food");
+      setAmount("");
+      setPaidBy(group.members[0]);
+      setSplitMode("even");
+      setSplits({});
+    }
+  }, [open]);
 
   const parsedAmount = parseFloat(amount) || 0;
 
@@ -109,7 +135,7 @@ export default function AddExpenseModal({ open, setOpen, group }: Props) {
           )
         : {};
 
-    addExpense(group.id, {
+    const payload = {
       title: title.trim(),
       category,
       amount: parsedAmount,
@@ -117,15 +143,14 @@ export default function AddExpenseModal({ open, setOpen, group }: Props) {
       participants: group.members,
       splitMode,
       splits: parsedSplits,
-    });
+    };
 
-    // reset
-    setTitle("");
-    setCategory("Food");
-    setAmount("");
-    setPaidBy(group.members[0]);
-    setSplitMode("even");
-    setSplits({});
+    if (editingExpense) {
+      updateExpense(group.id, editingExpense.id, payload);
+    } else {
+      addExpense(group.id, payload);
+    }
+
     setOpen(false);
   };
 
@@ -139,7 +164,7 @@ export default function AddExpenseModal({ open, setOpen, group }: Props) {
           <View style={styles.handle} />
 
           <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
-            <Text style={styles.heading}>Add Expense</Text>
+            <Text style={styles.heading}>{editingExpense ? "Edit Expense" : "Add Expense"}</Text>
 
             {/* Title */}
             <Text style={styles.label}>Title</Text>
@@ -160,26 +185,25 @@ export default function AddExpenseModal({ open, setOpen, group }: Props) {
               style={styles.categoryScroll}
               contentContainerStyle={styles.categoryRow}
             >
-              {CATEGORIES.map((cat) => (
-                <Pressable
-                  key={cat.label}
-                  onPress={() => setCategory(cat.label)}
-                  style={[
-                    styles.categoryChip,
-                    category === cat.label && styles.categoryChipActive,
-                  ]}
-                >
-                  <Text style={styles.categoryEmoji}>{cat.emoji}</Text>
-                  <Text
-                    style={[
-                      styles.categoryLabel,
-                      category === cat.label && styles.categoryLabelActive,
-                    ]}
+              {CATEGORIES.map((cat) => {
+                const active = category === cat.label;
+                return (
+                  <Pressable
+                    key={cat.label}
+                    onPress={() => setCategory(cat.label)}
+                    style={[styles.categoryChip, active && styles.categoryChipActive]}
                   >
-                    {cat.label}
-                  </Text>
-                </Pressable>
-              ))}
+                    <Ionicons
+                      name={cat.icon as any}
+                      size={18}
+                      color={active ? palette.accentSoft : palette.inkSoft}
+                    />
+                    <Text style={[styles.categoryLabel, active && styles.categoryLabelActive]}>
+                      {cat.label}
+                    </Text>
+                  </Pressable>
+                );
+              })}
             </ScrollView>
 
             {/* Amount */}
@@ -273,7 +297,7 @@ export default function AddExpenseModal({ open, setOpen, group }: Props) {
               onPress={handleAdd}
               style={[styles.button, !canSubmit && styles.buttonDisabled]}
             >
-              <Text style={styles.buttonText}>Add Expense</Text>
+              <Text style={styles.buttonText}>{editingExpense ? "Save Changes" : "Add Expense"}</Text>
             </Pressable>
 
             <Pressable onPress={() => setOpen(false)} style={styles.cancel}>
@@ -358,9 +382,6 @@ const styles = StyleSheet.create({
   categoryChipActive: {
     backgroundColor: palette.ink,
     borderColor: palette.ink,
-  },
-  categoryEmoji: {
-    fontSize: 20,
   },
   categoryLabel: {
     fontFamily: typography.body,

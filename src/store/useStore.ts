@@ -34,7 +34,9 @@ export interface Group {
   id: string;
   name: string;
   inviteCode: string;
+  createdBy: string;
   members: string[];
+  memberIds: Record<string, string>; // name -> user_id
   memberPaymentInfo: Record<string, PaymentInfo>;
   expenses: Expense[];
   settlements: Settlement[];
@@ -49,9 +51,14 @@ interface Store {
   processPendingActions: () => Promise<void>;
   fetchGroups: () => Promise<void>;
   createGroup: (name: string) => Promise<void>;
-  addExpense: (groupId: string, expense: Omit<Expense, "id">) => Promise<void>;
+  addExpense: (groupId: string, expense: Omit<Expense, "id" | "createdAt">) => Promise<void>;
+  updateExpense: (groupId: string, expenseId: string, updates: Omit<Expense, "id" | "createdAt">) => Promise<void>;
   markSettled: (groupId: string, from: string, to: string, amount: number) => Promise<void>;
   deleteExpense: (groupId: string, expenseId: string) => Promise<void>;
+  renameGroup: (groupId: string, name: string) => Promise<void>;
+  removeGroupMember: (groupId: string, memberUserId: string, memberName: string) => Promise<void>;
+  leaveGroup: (groupId: string) => Promise<void>;
+  deleteGroup: (groupId: string) => Promise<void>;
   subscribeToGroup: (groupId: string) => () => void;
   joinGroup: (inviteCode: string) => Promise<{ error: string | null }>;
 }
@@ -109,7 +116,7 @@ export const useStore = create<Store>()(
             ] = await Promise.all([
               supabase
                 .from("group_members")
-                .select("name, profiles(bank_name, account_number, account_name)")
+                .select("name, user_id, profiles(bank_name, account_number, account_name)")
                 .eq("group_id", g.id),
               supabase
                 .from("expenses")
@@ -124,7 +131,9 @@ export const useStore = create<Store>()(
             ]);
 
             const memberPaymentInfo: Record<string, PaymentInfo> = {};
+            const memberIds: Record<string, string> = {};
             members?.forEach((m: any) => {
+              memberIds[m.name] = m.user_id;
               const p = m.profiles;
               if (p?.bank_name && p?.account_number && p?.account_name) {
                 memberPaymentInfo[m.name] = {
@@ -139,7 +148,9 @@ export const useStore = create<Store>()(
               id: g.id,
               name: g.name,
               inviteCode: g.invite_code,
+              createdBy: g.created_by,
               members: members?.map((m: any) => m.name) ?? [],
+              memberIds,
               memberPaymentInfo,
               expenses:
                 expenses?.map((e) => ({
@@ -189,7 +200,14 @@ export const useStore = create<Store>()(
 
         if (error || !group) return;
 
-        const creatorName = user.email?.split("@")[0] ?? "You";
+        const { data: profile } = await supabase
+          .from("profiles")
+          .select("full_name")
+          .eq("id", user.id)
+          .single();
+
+        const creatorName =
+          profile?.full_name?.trim() || user.email?.split("@")[0] || "You";
 
         await supabase.from("group_members").insert({
           group_id: group.id,
@@ -201,7 +219,9 @@ export const useStore = create<Store>()(
           id: group.id,
           name: group.name,
           inviteCode: group.invite_code,
+          createdBy: user.id,
           members: [creatorName],
+          memberIds: { [creatorName]: user.id },
           memberPaymentInfo: {},
           expenses: [],
           settlements: [],
@@ -329,6 +349,97 @@ export const useStore = create<Store>()(
         }));
       },
 
+      updateExpense: async (groupId, expenseId, updates) => {
+        const { error } = await supabase
+          .from("expenses")
+          .update({
+            title: updates.title,
+            category: updates.category,
+            amount: updates.amount,
+            paid_by: updates.paidBy,
+            participants: updates.participants,
+            split_mode: updates.splitMode,
+            splits: updates.splitMode !== "even" ? updates.splits : null,
+          })
+          .eq("id", expenseId);
+
+        if (error) return;
+
+        set((state) => ({
+          groups: state.groups.map((g) =>
+            g.id === groupId
+              ? {
+                  ...g,
+                  expenses: g.expenses.map((e) =>
+                    e.id === expenseId ? { ...e, ...updates } : e,
+                  ),
+                }
+              : g,
+          ),
+        }));
+      },
+
+      renameGroup: async (groupId, name) => {
+        const { error } = await supabase
+          .from("groups")
+          .update({ name })
+          .eq("id", groupId);
+
+        if (error) return;
+
+        set((state) => ({
+          groups: state.groups.map((g) =>
+            g.id === groupId ? { ...g, name } : g,
+          ),
+        }));
+      },
+
+      removeGroupMember: async (groupId, memberUserId, memberName) => {
+        const { error } = await supabase
+          .from("group_members")
+          .delete()
+          .eq("group_id", groupId)
+          .eq("user_id", memberUserId);
+
+        if (error) return;
+
+        set((state) => ({
+          groups: state.groups.map((g) =>
+            g.id === groupId
+              ? { ...g, members: g.members.filter((m) => m !== memberName) }
+              : g,
+          ),
+        }));
+      },
+
+      leaveGroup: async (groupId) => {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return;
+
+        await supabase
+          .from("group_members")
+          .delete()
+          .eq("group_id", groupId)
+          .eq("user_id", user.id);
+
+        set((state) => ({
+          groups: state.groups.filter((g) => g.id !== groupId),
+        }));
+      },
+
+      deleteGroup: async (groupId) => {
+        const { error } = await supabase
+          .from("groups")
+          .delete()
+          .eq("id", groupId);
+
+        if (error) return;
+
+        set((state) => ({
+          groups: state.groups.filter((g) => g.id !== groupId),
+        }));
+      },
+
       subscribeToGroup: (groupId) => {
         const channel = supabase.channel(`group-${groupId}`);
 
@@ -390,7 +501,14 @@ export const useStore = create<Store>()(
           return { error: "You are already a member of this group." };
         }
 
-        const memberName = user.email?.split("@")[0] ?? "Member";
+        const { data: profile } = await supabase
+          .from("profiles")
+          .select("full_name")
+          .eq("id", user.id)
+          .single();
+
+        const memberName =
+          profile?.full_name?.trim() || user.email?.split("@")[0] || "Member";
 
         const { error: joinError } = await supabase
           .from("group_members")

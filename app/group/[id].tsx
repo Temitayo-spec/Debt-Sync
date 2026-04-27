@@ -1,15 +1,17 @@
 import * as Clipboard from "expo-clipboard";
+import { Ionicons } from "@expo/vector-icons";
 import { exportGroupCSV } from "../../src/lib/export";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useState } from "react";
 import { Alert, Linking, Pressable, Share, StyleSheet, Text, View } from "react-native";
 import AddExpenseModal from "../../src/components/AddExpenseModal";
 import AppScreen from "../../src/components/AppScreen";
+import GroupSettingsSheet from "../../src/components/GroupSettingsSheet";
 import SpendingChart from "../../src/components/SpendingChart";
 import {
   calculateBalances,
   getActivityFeed,
-  getCategoryEmoji,
+  getCategoryIcon,
   getUserBalance,
   simplifyDebts,
   timeAgo,
@@ -22,6 +24,8 @@ export default function GroupScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const [modalOpen, setModalOpen] = useState(false);
+  const [editingExpense, setEditingExpense] = useState<import("../../src/lib/settlement").Expense | undefined>();
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const markSettled = useStore((s) => s.markSettled);
   const deleteExpense = useStore((s) => s.deleteExpense);
   const { user } = useAuth();
@@ -88,11 +92,18 @@ export default function GroupScreen() {
     <AppScreen scroll contentContainerStyle={styles.container}>
       <View style={styles.topRow}>
         <Pressable onPress={() => router.back()} style={styles.back}>
-          <Text style={styles.backText}>← Back</Text>
+          <Ionicons name="chevron-back" size={14} color={palette.ink} />
+          <Text style={styles.backText}>Back</Text>
         </Pressable>
-        <Pressable onPress={handleShare} style={styles.shareButton}>
-          <Text style={styles.shareButtonText}>Share Summary</Text>
-        </Pressable>
+        <View style={styles.topRowRight}>
+          <Pressable onPress={handleShare} style={styles.shareButton}>
+            <Ionicons name="share-outline" size={14} color={palette.inkSoft} />
+            <Text style={styles.shareButtonText}>Share</Text>
+          </Pressable>
+          <Pressable onPress={() => setSettingsOpen(true)} style={styles.settingsButton}>
+            <Ionicons name="ellipsis-horizontal" size={18} color={palette.inkSoft} />
+          </Pressable>
+        </View>
       </View>
 
       <View style={styles.heroCard}>
@@ -188,9 +199,18 @@ export default function GroupScreen() {
                     <Text style={styles.bankDetailsLabel}>Pay to</Text>
                     <View style={styles.bankDetailsRow}>
                       <View style={styles.bankDetailsInfo}>
-                        <Text style={styles.bankDetailsBank}>🏦 {recipientInfo.bankName}</Text>
-                        <Text style={styles.bankDetailsName}>👤 {recipientInfo.accountName}</Text>
-                        <Text style={styles.bankDetailsNumber}>🔢 {recipientInfo.accountNumber}</Text>
+                        <View style={styles.bankDetailRow}>
+                          <Ionicons name="business-outline" size={13} color={palette.inkSoft} />
+                          <Text style={styles.bankDetailsBank}>{recipientInfo.bankName}</Text>
+                        </View>
+                        <View style={styles.bankDetailRow}>
+                          <Ionicons name="person-outline" size={13} color={palette.inkSoft} />
+                          <Text style={styles.bankDetailsName}>{recipientInfo.accountName}</Text>
+                        </View>
+                        <View style={styles.bankDetailRow}>
+                          <Ionicons name="keypad-outline" size={13} color={palette.inkSoft} />
+                          <Text style={styles.bankDetailsNumber}>{recipientInfo.accountNumber}</Text>
+                        </View>
                       </View>
                       <Pressable
                         onPress={() => Clipboard.setStringAsync(recipientInfo.accountNumber)}
@@ -217,7 +237,8 @@ export default function GroupScreen() {
                   }
                   style={styles.nudgeButton}
                 >
-                  <Text style={styles.nudgeButtonText}>Nudge 💬</Text>
+                  <Ionicons name="chatbubble-outline" size={13} color={palette.inkSoft} />
+                  <Text style={styles.nudgeButtonText}>Nudge</Text>
                 </Pressable>
                 <Pressable
                   onPress={() =>
@@ -254,24 +275,32 @@ export default function GroupScreen() {
             key={expense.id}
             style={styles.expenseCard}
             onLongPress={() =>
-              Alert.alert(
-                "Delete Expense",
-                `Remove "${expense.title}"? This can't be undone.`,
-                [
-                  { text: "Cancel", style: "cancel" },
-                  {
-                    text: "Delete",
-                    style: "destructive",
-                    onPress: () => deleteExpense(group.id, expense.id),
+              Alert.alert(expense.title, "What would you like to do?", [
+                { text: "Cancel", style: "cancel" },
+                {
+                  text: "Edit",
+                  onPress: () => {
+                    setEditingExpense(expense);
+                    setModalOpen(true);
                   },
-                ],
-              )
+                },
+                {
+                  text: "Delete",
+                  style: "destructive",
+                  onPress: () => deleteExpense(group.id, expense.id),
+                },
+              ])
             }
           >
             <View style={styles.expenseInfo}>
-              <Text style={styles.expenseTitle}>
-                {getCategoryEmoji(expense.category)} {expense.title}
-              </Text>
+              <View style={styles.expenseTitleRow}>
+                <Ionicons
+                  name={getCategoryIcon(expense.category) as any}
+                  size={14}
+                  color={palette.accent}
+                />
+                <Text style={styles.expenseTitle}>{expense.title}</Text>
+              </View>
               <Text style={styles.expensePaidBy}>{expense.paidBy} paid</Text>
               <Text style={styles.expenseParticipants}>
                 {expense.splitMode === "even" ? "Split evenly" : `Custom split (${expense.splitMode})`}
@@ -301,7 +330,7 @@ export default function GroupScreen() {
           onPress={() => exportGroupCSV(group.name, group.expenses, group.settlements)}
           style={styles.exportButton}
         >
-          <Text style={styles.exportButtonText}>Export CSV</Text>
+          <Ionicons name="download-outline" size={18} color={palette.inkSoft} />
         </Pressable>
       </View>
 
@@ -316,9 +345,11 @@ export default function GroupScreen() {
             item.kind === "expense" ? (
               <View key={item.data.id} style={styles.activityCard}>
                 <View style={styles.activityLeft}>
-                  <Text style={styles.activityEmoji}>
-                    {getCategoryEmoji(item.data.category)}
-                  </Text>
+                  <Ionicons
+                    name={getCategoryIcon(item.data.category) as any}
+                    size={18}
+                    color={palette.accent}
+                  />
                 </View>
                 <View style={styles.activityBody}>
                   <Text style={styles.activityTitle}>{item.data.title}</Text>
@@ -336,9 +367,11 @@ export default function GroupScreen() {
             ) : (
               <View key={item.data.id} style={styles.activityCard}>
                 <View style={styles.activityLeft}>
-                  <Text style={styles.activityEmoji}>
-                    {item.data.paymentMethod === "paystack" ? "💳" : "✅"}
-                  </Text>
+                  <Ionicons
+                    name="checkmark-circle-outline"
+                    size={18}
+                    color={palette.positive}
+                  />
                 </View>
                 <View style={styles.activityBody}>
                   <Text style={styles.activityTitle}>
@@ -360,7 +393,20 @@ export default function GroupScreen() {
         </>
       )}
 
-      <AddExpenseModal open={modalOpen} setOpen={setModalOpen} group={group} />
+      <AddExpenseModal
+        open={modalOpen}
+        setOpen={(v) => { setModalOpen(v); if (!v) setEditingExpense(undefined); }}
+        group={group}
+        editingExpense={editingExpense}
+      />
+
+      <GroupSettingsSheet
+        visible={settingsOpen}
+        group={group}
+        currentUserId={user?.id ?? ""}
+        onClose={() => setSettingsOpen(false)}
+        onLeaveOrDelete={() => { setSettingsOpen(false); router.back(); }}
+      />
     </AppScreen>
   );
 }
@@ -394,9 +440,12 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   back: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
     backgroundColor: palette.surface,
     borderRadius: radii.pill,
-    paddingHorizontal: 16,
+    paddingHorizontal: 14,
     paddingVertical: 10,
     borderWidth: 1,
     borderColor: palette.line,
@@ -407,9 +456,12 @@ const styles = StyleSheet.create({
     color: palette.ink,
   },
   shareButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
     backgroundColor: palette.surfaceMuted,
     borderRadius: radii.pill,
-    paddingHorizontal: 16,
+    paddingHorizontal: 14,
     paddingVertical: 10,
     borderWidth: 1,
     borderColor: palette.line,
@@ -418,6 +470,21 @@ const styles = StyleSheet.create({
     fontFamily: typography.bodyMedium,
     fontSize: 13,
     color: palette.inkSoft,
+  },
+  topRowRight: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  settingsButton: {
+    width: 38,
+    height: 38,
+    borderRadius: radii.pill,
+    borderWidth: 1,
+    borderColor: palette.line,
+    backgroundColor: palette.surfaceMuted,
+    alignItems: "center",
+    justifyContent: "center",
   },
   heroCard: {
     backgroundColor: palette.ink,
@@ -526,11 +593,16 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingRight: 18,
   },
+  expenseTitleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    marginBottom: 4,
+  },
   expenseTitle: {
     fontFamily: typography.bodyMedium,
     fontSize: 15,
     color: palette.ink,
-    marginBottom: 4,
   },
   expensePaidBy: {
     fontFamily: typography.body,
@@ -586,18 +658,14 @@ const styles = StyleSheet.create({
     fontSize: 16,
   },
   exportButton: {
-    padding: 16,
-    borderRadius: radii.pill,
+    width: 52,
     alignItems: "center",
+    justifyContent: "center",
+    borderRadius: radii.pill,
     borderWidth: 1,
     borderColor: palette.line,
     backgroundColor: palette.surface,
     ...shadows.card,
-  },
-  exportButtonText: {
-    color: palette.inkSoft,
-    fontFamily: typography.bodyMedium,
-    fontSize: 16,
   },
   balanceCard: {
     padding: 20,
@@ -663,9 +731,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  activityEmoji: {
-    fontSize: 18,
-  },
   activityBody: {
     flex: 1,
     gap: 3,
@@ -719,7 +784,12 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   bankDetailsInfo: {
-    gap: 4,
+    gap: 6,
+  },
+  bankDetailRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
   },
   bankDetailsBank: {
     fontFamily: typography.bodyMedium,
@@ -770,6 +840,9 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   nudgeButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
     paddingHorizontal: 14,
     paddingVertical: 9,
     borderRadius: radii.pill,

@@ -1,5 +1,6 @@
+import { Ionicons } from "@expo/vector-icons";
 import { StyleSheet, Text, View } from "react-native";
-import { CATEGORIES, getCategoryEmoji, Expense } from "../lib/settlement";
+import { CATEGORIES, getCategoryIcon, Expense } from "../lib/settlement";
 import { palette, radii, shadows, typography } from "../theme";
 
 interface Props {
@@ -34,7 +35,11 @@ export default function SpendingChart({ expenses }: Props) {
         {rows.map(({ category, amount, pct }) => (
           <View key={category} style={styles.row}>
             <View style={styles.rowLeft}>
-              <Text style={styles.emoji}>{getCategoryEmoji(category)}</Text>
+              <Ionicons
+                name={getCategoryIcon(category) as any}
+                size={14}
+                color={palette.accentSoft}
+              />
               <Text style={styles.category}>{category}</Text>
             </View>
             <View style={styles.barTrack}>
@@ -89,9 +94,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 6,
     width: 110,
-  },
-  emoji: {
-    fontSize: 15,
   },
   category: {
     fontFamily: typography.body,

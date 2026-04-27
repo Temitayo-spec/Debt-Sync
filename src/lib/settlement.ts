@@ -111,19 +111,19 @@ export function getUserBalance(
 }
 
 export const CATEGORIES = [
-  { label: "Food", emoji: "🍕" },
-  { label: "Transport", emoji: "🚗" },
-  { label: "Rent", emoji: "🏠" },
-  { label: "Entertainment", emoji: "🎉" },
-  { label: "Groceries", emoji: "🛒" },
-  { label: "Travel", emoji: "✈️" },
-  { label: "Utilities", emoji: "💡" },
-  { label: "Health", emoji: "🏥" },
-  { label: "Other", emoji: "📦" },
+  { label: "Food",          icon: "restaurant-outline"    },
+  { label: "Transport",     icon: "car-outline"           },
+  { label: "Rent",          icon: "home-outline"          },
+  { label: "Entertainment", icon: "musical-notes-outline" },
+  { label: "Groceries",     icon: "cart-outline"          },
+  { label: "Travel",        icon: "airplane-outline"      },
+  { label: "Utilities",     icon: "bulb-outline"          },
+  { label: "Health",        icon: "medical-outline"       },
+  { label: "Other",         icon: "grid-outline"          },
 ] as const;
 
-export function getCategoryEmoji(label: string): string {
-  return CATEGORIES.find((c) => c.label === label)?.emoji ?? "📦";
+export function getCategoryIcon(label: string): string {
+  return CATEGORIES.find((c) => c.label === label)?.icon ?? "grid-outline";
 }
 
 export type ActivityItem =

@@ -1,4 +1,4 @@
-import * as Clipboard from "expo-clipboard";
+import { Ionicons } from "@expo/vector-icons";
 import { useEffect, useState } from "react";
 import {
   ActivityIndicator,
@@ -54,6 +54,7 @@ export default function PaymentInfoSheet({ visible, userId, onClose }: Props) {
   const fetchGroups = useStore((s) => s.fetchGroups);
 
   const [step, setStep] = useState<Step>("form");
+  const [displayName, setDisplayName] = useState("");
   const [bankName, setBankName] = useState("");
   const [accountNumber, setAccountNumber] = useState("");
   const [accountName, setAccountName] = useState("");
@@ -69,11 +70,12 @@ export default function PaymentInfoSheet({ visible, userId, onClose }: Props) {
 
     supabase
       .from("profiles")
-      .select("bank_name, account_number, account_name")
+      .select("full_name, bank_name, account_number, account_name")
       .eq("id", userId)
       .single()
       .then(({ data }) => {
         if (data) {
+          setDisplayName(data.full_name ?? "");
           setBankName(data.bank_name ?? "");
           setAccountNumber(data.account_number ?? "");
           setAccountName(data.account_name ?? "");
@@ -86,10 +88,7 @@ export default function PaymentInfoSheet({ visible, userId, onClose }: Props) {
     b.toLowerCase().includes(bankSearch.toLowerCase()),
   );
 
-  const canSave =
-    bankName.trim().length > 0 &&
-    accountNumber.trim().length >= 10 &&
-    accountName.trim().length > 0;
+  const canSave = displayName.trim().length > 0;
 
   const handleSave = async () => {
     if (!canSave) return;
@@ -98,9 +97,10 @@ export default function PaymentInfoSheet({ visible, userId, onClose }: Props) {
     await supabase
       .from("profiles")
       .update({
-        bank_name: bankName.trim(),
-        account_number: accountNumber.trim(),
-        account_name: accountName.trim(),
+        full_name: displayName.trim(),
+        bank_name: bankName.trim() || null,
+        account_number: accountNumber.trim() || null,
+        account_name: accountName.trim() || null,
       })
       .eq("id", userId);
 
@@ -176,7 +176,7 @@ export default function PaymentInfoSheet({ visible, userId, onClose }: Props) {
               </View>
 
               <Text style={styles.subheading}>
-                Group members will see these details when they need to pay you.
+                Set your name and payment details so group members can pay you directly.
               </Text>
 
               {loading ? (
@@ -185,6 +185,16 @@ export default function PaymentInfoSheet({ visible, userId, onClose }: Props) {
                 </View>
               ) : (
                 <>
+                  <Text style={styles.label}>Your Name</Text>
+                  <TextInput
+                    placeholder="e.g. John Doe"
+                    placeholderTextColor={palette.inkFaint}
+                    value={displayName}
+                    onChangeText={setDisplayName}
+                    style={styles.input}
+                    autoCapitalize="words"
+                  />
+
                   <Text style={styles.label}>Bank</Text>
                   <Pressable
                     onPress={() => setStep("bank")}
@@ -225,9 +235,18 @@ export default function PaymentInfoSheet({ visible, userId, onClose }: Props) {
                   {bankName && accountNumber && accountName ? (
                     <View style={styles.preview}>
                       <Text style={styles.previewLabel}>Preview</Text>
-                      <Text style={styles.previewText}>
-                        🏦 {bankName}{"  "}·{"  "}👤 {accountName}{"  "}·{"  "}🔢 {accountNumber}
-                      </Text>
+                      <View style={styles.previewRow}>
+                        <Ionicons name="business-outline" size={13} color={palette.inkSoft} />
+                        <Text style={styles.previewText}>{bankName}</Text>
+                      </View>
+                      <View style={styles.previewRow}>
+                        <Ionicons name="person-outline" size={13} color={palette.inkSoft} />
+                        <Text style={styles.previewText}>{accountName}</Text>
+                      </View>
+                      <View style={styles.previewRow}>
+                        <Ionicons name="keypad-outline" size={13} color={palette.inkSoft} />
+                        <Text style={styles.previewText}>{accountNumber}</Text>
+                      </View>
                     </View>
                   ) : null}
 
@@ -366,11 +385,16 @@ const styles = StyleSheet.create({
     textTransform: "uppercase",
     marginBottom: 8,
   },
+  previewRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginTop: 6,
+  },
   previewText: {
     fontFamily: typography.body,
     fontSize: 13,
     color: palette.ink,
-    lineHeight: 20,
   },
   button: {
     backgroundColor: palette.accent,
