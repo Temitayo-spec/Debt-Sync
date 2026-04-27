@@ -30,6 +30,13 @@
     "plugins": [
       "expo-router",
       [
+        "expo-image-picker",
+        {
+          "photosPermission": "Debt Sync uses your photos to attach receipts to expenses.",
+          "cameraPermission": "Debt Sync uses your camera to capture receipts."
+        }
+      ],
+      [
         "expo-splash-screen",
         {
           "image": "./assets/images/splash-icon.png",
