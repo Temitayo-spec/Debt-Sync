@@ -1,8 +1,9 @@
 import { useRouter } from "expo-router";
 import * as Clipboard from "expo-clipboard";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { FlatList, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import AppScreen from "../src/components/AppScreen";
+import PaymentInfoSheet from "../src/components/PaymentInfoSheet";
 import { supabase } from "../src/lib/supabase";
 import { useAuth } from "../src/providers/AuthProvider";
 import { useStore } from "../src/store/useStore";
@@ -13,6 +14,7 @@ export default function Home() {
   const { user } = useAuth();
   const groups = useStore((s) => s.groups);
   const fetchGroups = useStore((s) => s.fetchGroups);
+  const [paymentInfoOpen, setPaymentInfoOpen] = useState(false);
 
   useEffect(() => {
     fetchGroups();
@@ -37,12 +39,20 @@ export default function Home() {
                 {user?.email ?? "Signed in"}
               </Text>
             </View>
-            <Pressable
-              onPress={() => supabase.auth.signOut()}
-              style={styles.signOutButton}
-            >
-              <Text style={styles.signOutText}>Sign Out</Text>
-            </Pressable>
+            <View style={styles.headerButtons}>
+              <Pressable
+                onPress={() => setPaymentInfoOpen(true)}
+                style={styles.iconButton}
+              >
+                <Text style={styles.iconButtonText}>🏦</Text>
+              </Pressable>
+              <Pressable
+                onPress={() => supabase.auth.signOut()}
+                style={styles.signOutButton}
+              >
+                <Text style={styles.signOutText}>Sign Out</Text>
+              </Pressable>
+            </View>
           </View>
 
           <Text style={styles.eyebrow}>Shared finance, elevated</Text>
@@ -132,6 +142,13 @@ export default function Home() {
           <Text style={styles.secondaryButtonText}>Join Group</Text>
         </Pressable>
       </View>
+      {user && (
+        <PaymentInfoSheet
+          visible={paymentInfoOpen}
+          userId={user.id}
+          onClose={() => setPaymentInfoOpen(false)}
+        />
+      )}
     </AppScreen>
   );
 }
@@ -173,6 +190,21 @@ const styles = StyleSheet.create({
     fontFamily: typography.body,
     fontSize: 12,
     color: "#D8D1C7",
+  },
+  headerButtons: {
+    flexDirection: "row",
+    gap: 8,
+    alignItems: "center",
+  },
+  iconButton: {
+    borderRadius: radii.pill,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.15)",
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+  },
+  iconButtonText: {
+    fontSize: 16,
   },
   signOutButton: {
     borderRadius: radii.pill,

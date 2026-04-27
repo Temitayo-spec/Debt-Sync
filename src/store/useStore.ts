@@ -19,11 +19,23 @@ const mmkvStorage = {
   },
 };
 
+export type PendingAction =
+  | { type: "addExpense"; groupId: string; expense: Omit<Expense, "id" | "createdAt"> }
+  | { type: "markSettled"; groupId: string; from: string; to: string; amount: number }
+  | { type: "deleteExpense"; groupId: string; expenseId: string };
+
+export interface PaymentInfo {
+  bankName: string;
+  accountNumber: string;
+  accountName: string;
+}
+
 export interface Group {
   id: string;
   name: string;
   inviteCode: string;
   members: string[];
+  memberPaymentInfo: Record<string, PaymentInfo>;
   expenses: Expense[];
   settlements: Settlement[];
 }
@@ -34,7 +46,8 @@ interface Store {
   fetchGroups: () => Promise<void>;
   createGroup: (name: string) => Promise<void>;
   addExpense: (groupId: string, expense: Omit<Expense, "id">) => Promise<void>;
-  markSettled: (groupId: string, from: string, to: string, amount: number, paymentRef?: string) => Promise<void>;
+  markSettled: (groupId: string, from: string, to: string, amount: number) => Promise<void>;
+  deleteExpense: (groupId: string, expenseId: string) => Promise<void>;
   subscribeToGroup: (groupId: string) => () => void;
   joinGroup: (inviteCode: string) => Promise<{ error: string | null }>;
 }
@@ -67,7 +80,7 @@ export const useStore = create<Store>()(
             ] = await Promise.all([
               supabase
                 .from("group_members")
-                .select("name")
+                .select("name, profiles(bank_name, account_number, account_name)")
                 .eq("group_id", g.id),
               supabase
                 .from("expenses")
@@ -81,11 +94,24 @@ export const useStore = create<Store>()(
                 .order("created_at", { ascending: true }),
             ]);
 
+            const memberPaymentInfo: Record<string, PaymentInfo> = {};
+            members?.forEach((m: any) => {
+              const p = m.profiles;
+              if (p?.bank_name && p?.account_number && p?.account_name) {
+                memberPaymentInfo[m.name] = {
+                  bankName: p.bank_name,
+                  accountNumber: p.account_number,
+                  accountName: p.account_name,
+                };
+              }
+            });
+
             return {
               id: g.id,
               name: g.name,
               inviteCode: g.invite_code,
-              members: members?.map((m) => m.name) ?? [],
+              members: members?.map((m: any) => m.name) ?? [],
+              memberPaymentInfo,
               expenses:
                 expenses?.map((e) => ({
                   id: e.id,
@@ -147,6 +173,7 @@ export const useStore = create<Store>()(
           name: group.name,
           inviteCode: group.invite_code,
           members: [creatorName],
+          memberPaymentInfo: {},
           expenses: [],
           settlements: [],
         };
@@ -191,19 +218,28 @@ export const useStore = create<Store>()(
               : g,
           ),
         }));
+
+        // notify other group members
+        const { data: { user } } = await supabase.auth.getUser();
+        const group = get().groups.find((g) => g.id === groupId);
+        if (user && group) {
+          supabase.functions.invoke("notify-expense", {
+            body: {
+              groupId,
+              groupName: group.name,
+              expenseTitle: newExpense.title,
+              paidBy: newExpense.paidBy,
+              amount: newExpense.amount,
+              excludeUserId: user.id,
+            },
+          });
+        }
       },
 
-      markSettled: async (groupId, from, to, amount, paymentRef) => {
+      markSettled: async (groupId, from, to, amount) => {
         const { data, error } = await supabase
           .from("settlements")
-          .insert({
-            group_id: groupId,
-            from,
-            to,
-            amount,
-            payment_ref: paymentRef ?? null,
-            payment_method: paymentRef ? "paystack" : "manual",
-          })
+          .insert({ group_id: groupId, from, to, amount })
           .select()
           .single();
 
@@ -214,8 +250,6 @@ export const useStore = create<Store>()(
           from: data.from,
           to: data.to,
           amount: data.amount,
-          paymentRef: data.payment_ref ?? undefined,
-          paymentMethod: data.payment_method ?? "manual",
           createdAt: data.created_at ?? new Date().toISOString(),
         };
 
@@ -223,6 +257,23 @@ export const useStore = create<Store>()(
           groups: state.groups.map((g) =>
             g.id === groupId
               ? { ...g, settlements: [...g.settlements, newSettlement] }
+              : g,
+          ),
+        }));
+      },
+
+      deleteExpense: async (groupId, expenseId) => {
+        const { error } = await supabase
+          .from("expenses")
+          .delete()
+          .eq("id", expenseId);
+
+        if (error) return;
+
+        set((state) => ({
+          groups: state.groups.map((g) =>
+            g.id === groupId
+              ? { ...g, expenses: g.expenses.filter((e) => e.id !== expenseId) }
               : g,
           ),
         }));

@@ -8,6 +8,7 @@ import {
 import { AppState } from "react-native";
 import { Session, User } from "@supabase/supabase-js";
 import { supabase } from "../lib/supabase";
+import { registerPushToken } from "../lib/notifications";
 
 interface AuthContextValue {
   isLoading: boolean;
@@ -44,6 +45,9 @@ export function AuthProvider({ children }: PropsWithChildren) {
     } = supabase.auth.onAuthStateChange((_event, nextSession) => {
       setSession(nextSession);
       setIsLoading(false);
+      if (nextSession?.user) {
+        registerPushToken(nextSession.user.id);
+      }
     });
 
     const appStateSubscription = AppState.addEventListener(

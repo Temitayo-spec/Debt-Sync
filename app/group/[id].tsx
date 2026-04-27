@@ -1,9 +1,11 @@
+import * as Clipboard from "expo-clipboard";
+import { exportGroupCSV } from "../../src/lib/export";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useState } from "react";
-import { Linking, Pressable, StyleSheet, Text, View } from "react-native";
+import { Alert, Linking, Pressable, Share, StyleSheet, Text, View } from "react-native";
 import AddExpenseModal from "../../src/components/AddExpenseModal";
 import AppScreen from "../../src/components/AppScreen";
-import PaystackSheet from "../../src/components/PaystackSheet";
+import SpendingChart from "../../src/components/SpendingChart";
 import {
   calculateBalances,
   getActivityFeed,
@@ -11,7 +13,6 @@ import {
   getUserBalance,
   simplifyDebts,
   timeAgo,
-  Transaction,
 } from "../../src/lib/settlement";
 import { useAuth } from "../../src/providers/AuthProvider";
 import { useStore } from "../../src/store/useStore";
@@ -21,8 +22,8 @@ export default function GroupScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const [modalOpen, setModalOpen] = useState(false);
-  const [activePayment, setActivePayment] = useState<Transaction | null>(null);
   const markSettled = useStore((s) => s.markSettled);
+  const deleteExpense = useStore((s) => s.deleteExpense);
   const { user } = useAuth();
 
   const subscribeToGroup = useStore((s) => s.subscribeToGroup);
@@ -49,12 +50,50 @@ export default function GroupScreen() {
   const currentUser = user?.email ?? group.members[0];
   const userBalance = getUserBalance(balances, currentUser);
   const activityFeed = getActivityFeed(group.expenses, group.settlements);
+  const totalSpent = group.expenses.reduce((s, e) => s + e.amount, 0);
+
+  const handleShare = () => {
+    const settlementLines =
+      settlements.length > 0
+        ? settlements.map((s) => `• ${s.from} → ${s.to}: ₦${s.amount.toLocaleString()}`).join("\n")
+        : "Everyone is settled up ✅";
+
+    const memberBalanceLines = group.members
+      .map((m) => {
+        const bal = getUserBalance(balances, m);
+        const sign = bal > 0 ? "+" : "";
+        return `• ${m}: ${sign}₦${Math.abs(bal).toLocaleString()}`;
+      })
+      .join("\n");
+
+    const message = [
+      `📊 *${group.name}* — Group Summary`,
+      ``,
+      `👥 Members: ${group.members.join(", ")}`,
+      `💰 Total spent: ₦${totalSpent.toLocaleString()} across ${group.expenses.length} expense${group.expenses.length !== 1 ? "s" : ""}`,
+      ``,
+      `⚖️ *Balances:*`,
+      memberBalanceLines,
+      ``,
+      `📋 *Suggested settlements:*`,
+      settlementLines,
+      ``,
+      `_Tracked on Debt Sync_`,
+    ].join("\n");
+
+    Share.share({ message });
+  };
 
   return (
     <AppScreen scroll contentContainerStyle={styles.container}>
-      <Pressable onPress={() => router.back()} style={styles.back}>
-        <Text style={styles.backText}>Back</Text>
-      </Pressable>
+      <View style={styles.topRow}>
+        <Pressable onPress={() => router.back()} style={styles.back}>
+          <Text style={styles.backText}>← Back</Text>
+        </Pressable>
+        <Pressable onPress={handleShare} style={styles.shareButton}>
+          <Text style={styles.shareButtonText}>Share Summary</Text>
+        </Pressable>
+      </View>
 
       <View style={styles.heroCard}>
         <Text style={styles.eyebrow}>Group overview</Text>
@@ -72,6 +111,8 @@ export default function GroupScreen() {
           </View>
         </View>
       </View>
+
+      <SpendingChart expenses={group.expenses} />
 
       <View
         style={[
@@ -108,39 +149,75 @@ export default function GroupScreen() {
       </View>
 
       {settlements.length > 0 ? (
-        settlements.map((settlement, index) => (
-          <View
-            key={`${settlement.from}-${settlement.to}-${index}`}
-            style={styles.settlementCard}
-          >
-            <View style={styles.settlementContent}>
-              <Text style={styles.settlementText}>
-                <Text style={styles.name}>{settlement.from}</Text>
-                {" owes "}
-                <Text style={styles.name}>{settlement.to}</Text>
-              </Text>
-              <Text style={styles.amount}>
-                ₦{settlement.amount.toLocaleString()}
-              </Text>
-            </View>
-            <View style={styles.settlementActions}>
-              <Pressable
-                onPress={() => {
-                  const msg = encodeURIComponent(
-                    `Hey! You owe ₦${settlement.amount.toLocaleString()} to ${settlement.to} on Debt Sync. Settle up when you can 💸`,
-                  );
-                  Linking.openURL(`whatsapp://send?text=${msg}`);
-                }}
-                style={styles.nudgeButton}
-              >
-                <Text style={styles.nudgeButtonText}>Nudge 💬</Text>
-              </Pressable>
-              <View style={styles.settlementPrimaryActions}>
+        settlements.map((settlement, index) => {
+          const iAmPaying = settlement.from === currentUser;
+          const iAmReceiving = settlement.to === currentUser;
+          const recipientInfo = group.memberPaymentInfo[settlement.to];
+          const myInfo = group.memberPaymentInfo[currentUser];
+
+          const buildNudgeMessage = () => {
+            if (iAmReceiving && myInfo) {
+              return encodeURIComponent(
+                `Hey ${settlement.from}! You owe me ₦${settlement.amount.toLocaleString()} on Debt Sync.\n\nTransfer to:\n🏦 ${myInfo.bankName}\n👤 ${myInfo.accountName}\n🔢 ${myInfo.accountNumber}\n\nThanks! 💸`,
+              );
+            }
+            return encodeURIComponent(
+              `Hey ${settlement.from}! You owe ${settlement.to} ₦${settlement.amount.toLocaleString()} on Debt Sync. Settle up when you can 💸`,
+            );
+          };
+
+          return (
+            <View
+              key={`${settlement.from}-${settlement.to}-${index}`}
+              style={styles.settlementCard}
+            >
+              <View style={styles.settlementContent}>
+                <Text style={styles.settlementText}>
+                  <Text style={styles.name}>{settlement.from}</Text>
+                  {" owes "}
+                  <Text style={styles.name}>{settlement.to}</Text>
+                </Text>
+                <Text style={styles.amount}>
+                  ₦{settlement.amount.toLocaleString()}
+                </Text>
+              </View>
+
+              {iAmPaying && (
+                recipientInfo ? (
+                  <View style={styles.bankDetails}>
+                    <Text style={styles.bankDetailsLabel}>Pay to</Text>
+                    <View style={styles.bankDetailsRow}>
+                      <View style={styles.bankDetailsInfo}>
+                        <Text style={styles.bankDetailsBank}>🏦 {recipientInfo.bankName}</Text>
+                        <Text style={styles.bankDetailsName}>👤 {recipientInfo.accountName}</Text>
+                        <Text style={styles.bankDetailsNumber}>🔢 {recipientInfo.accountNumber}</Text>
+                      </View>
+                      <Pressable
+                        onPress={() => Clipboard.setStringAsync(recipientInfo.accountNumber)}
+                        style={styles.copyButton}
+                        hitSlop={8}
+                      >
+                        <Text style={styles.copyButtonText}>Copy</Text>
+                      </Pressable>
+                    </View>
+                  </View>
+                ) : (
+                  <View style={styles.noBankDetails}>
+                    <Text style={styles.noBankDetailsText}>
+                      {settlement.to} hasn't added bank details yet. Nudge them to set it up.
+                    </Text>
+                  </View>
+                )
+              )}
+
+              <View style={styles.settlementActions}>
                 <Pressable
-                  onPress={() => setActivePayment(settlement)}
-                  style={styles.payButton}
+                  onPress={() =>
+                    Linking.openURL(`whatsapp://send?text=${buildNudgeMessage()}`)
+                  }
+                  style={styles.nudgeButton}
                 >
-                  <Text style={styles.payButtonText}>Pay Now</Text>
+                  <Text style={styles.nudgeButtonText}>Nudge 💬</Text>
                 </Pressable>
                 <Pressable
                   onPress={() =>
@@ -152,8 +229,8 @@ export default function GroupScreen() {
                 </Pressable>
               </View>
             </View>
-          </View>
-        ))
+          );
+        })
       ) : (
         <View style={styles.emptyCard}>
           <Text style={styles.emptyTitle}>All settled</Text>
@@ -173,7 +250,24 @@ export default function GroupScreen() {
 
       {group.expenses.length > 0 ? (
         group.expenses.map((expense) => (
-          <View key={expense.id} style={styles.expenseCard}>
+          <Pressable
+            key={expense.id}
+            style={styles.expenseCard}
+            onLongPress={() =>
+              Alert.alert(
+                "Delete Expense",
+                `Remove "${expense.title}"? This can't be undone.`,
+                [
+                  { text: "Cancel", style: "cancel" },
+                  {
+                    text: "Delete",
+                    style: "destructive",
+                    onPress: () => deleteExpense(group.id, expense.id),
+                  },
+                ],
+              )
+            }
+          >
             <View style={styles.expenseInfo}>
               <Text style={styles.expenseTitle}>
                 {getCategoryEmoji(expense.category)} {expense.title}
@@ -188,7 +282,7 @@ export default function GroupScreen() {
             <Text style={styles.expenseAmount}>
               ₦{expense.amount.toLocaleString()}
             </Text>
-          </View>
+          </Pressable>
         ))
       ) : (
         <View style={styles.emptyCard}>
@@ -199,9 +293,17 @@ export default function GroupScreen() {
         </View>
       )}
 
-      <Pressable onPress={() => setModalOpen(true)} style={styles.button}>
-        <Text style={styles.buttonText}>Add Expense</Text>
-      </Pressable>
+      <View style={styles.bottomActions}>
+        <Pressable onPress={() => setModalOpen(true)} style={[styles.button, { flex: 1 }]}>
+          <Text style={styles.buttonText}>Add Expense</Text>
+        </Pressable>
+        <Pressable
+          onPress={() => exportGroupCSV(group.name, group.expenses, group.settlements)}
+          style={styles.exportButton}
+        >
+          <Text style={styles.exportButtonText}>Export CSV</Text>
+        </Pressable>
+      </View>
 
       {activityFeed.length > 0 && (
         <>
@@ -259,21 +361,6 @@ export default function GroupScreen() {
       )}
 
       <AddExpenseModal open={modalOpen} setOpen={setModalOpen} group={group} />
-
-      {activePayment && (
-        <PaystackSheet
-          visible={!!activePayment}
-          amount={activePayment.amount}
-          email={user?.email ?? "user@debtsync.app"}
-          from={activePayment.from}
-          to={activePayment.to}
-          onSuccess={(ref) => {
-            markSettled(group.id, activePayment.from, activePayment.to, activePayment.amount, ref);
-            setActivePayment(null);
-          }}
-          onCancel={() => setActivePayment(null)}
-        />
-      )}
     </AppScreen>
   );
 }
@@ -300,20 +387,37 @@ const styles = StyleSheet.create({
     color: palette.inkSoft,
     textAlign: "center",
   },
+  topRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 20,
+  },
   back: {
-    alignSelf: "flex-start",
     backgroundColor: palette.surface,
     borderRadius: radii.pill,
     paddingHorizontal: 16,
     paddingVertical: 10,
     borderWidth: 1,
     borderColor: palette.line,
-    marginBottom: 20,
   },
   backText: {
     fontFamily: typography.bodyMedium,
     fontSize: 13,
     color: palette.ink,
+  },
+  shareButton: {
+    backgroundColor: palette.surfaceMuted,
+    borderRadius: radii.pill,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderWidth: 1,
+    borderColor: palette.line,
+  },
+  shareButtonText: {
+    fontFamily: typography.bodyMedium,
+    fontSize: 13,
+    color: palette.inkSoft,
   },
   heroCard: {
     backgroundColor: palette.ink,
@@ -464,16 +568,34 @@ const styles = StyleSheet.create({
     lineHeight: 21,
     color: palette.inkSoft,
   },
+  bottomActions: {
+    flexDirection: "row",
+    gap: 10,
+    marginTop: 18,
+  },
   button: {
     backgroundColor: palette.accent,
     padding: 16,
     borderRadius: radii.pill,
     alignItems: "center",
-    marginTop: 18,
     ...shadows.card,
   },
   buttonText: {
     color: palette.surface,
+    fontFamily: typography.bodyMedium,
+    fontSize: 16,
+  },
+  exportButton: {
+    padding: 16,
+    borderRadius: radii.pill,
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: palette.line,
+    backgroundColor: palette.surface,
+    ...shadows.card,
+  },
+  exportButtonText: {
+    color: palette.inkSoft,
     fontFamily: typography.bodyMedium,
     fontSize: 16,
   },
@@ -575,10 +697,76 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: palette.inkFaint,
   },
+  bankDetails: {
+    backgroundColor: palette.surfaceMuted,
+    borderRadius: radii.md,
+    padding: 14,
+    marginTop: 14,
+    borderWidth: 1,
+    borderColor: palette.line,
+  },
+  bankDetailsLabel: {
+    fontFamily: typography.bodyMedium,
+    fontSize: 11,
+    color: palette.inkFaint,
+    letterSpacing: 1.4,
+    textTransform: "uppercase",
+    marginBottom: 10,
+  },
+  bankDetailsRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  bankDetailsInfo: {
+    gap: 4,
+  },
+  bankDetailsBank: {
+    fontFamily: typography.bodyMedium,
+    fontSize: 14,
+    color: palette.ink,
+  },
+  bankDetailsName: {
+    fontFamily: typography.body,
+    fontSize: 13,
+    color: palette.inkSoft,
+  },
+  bankDetailsNumber: {
+    fontFamily: typography.bodyMedium,
+    fontSize: 14,
+    color: palette.ink,
+    letterSpacing: 1,
+  },
+  copyButton: {
+    backgroundColor: palette.ink,
+    borderRadius: radii.pill,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+  },
+  copyButtonText: {
+    fontFamily: typography.bodyMedium,
+    fontSize: 12,
+    color: palette.surface,
+  },
+  noBankDetails: {
+    backgroundColor: palette.negativeSoft,
+    borderRadius: radii.md,
+    padding: 12,
+    marginTop: 14,
+    borderWidth: 1,
+    borderColor: "#EDD2CC",
+  },
+  noBankDetailsText: {
+    fontFamily: typography.body,
+    fontSize: 13,
+    color: palette.negative,
+    lineHeight: 19,
+  },
   settlementActions: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
+    marginTop: 14,
     gap: 8,
   },
   nudgeButton: {
@@ -594,33 +782,16 @@ const styles = StyleSheet.create({
     fontFamily: typography.bodyMedium,
     color: palette.inkSoft,
   },
-  settlementPrimaryActions: {
-    flexDirection: "row",
-    gap: 8,
-  },
-  payButton: {
+  settleButton: {
     backgroundColor: palette.accent,
     borderRadius: radii.pill,
     paddingHorizontal: 18,
     paddingVertical: 10,
     ...shadows.card,
   },
-  payButtonText: {
-    fontSize: 13,
-    fontFamily: typography.bodyMedium,
-    color: palette.surface,
-  },
-  settleButton: {
-    backgroundColor: palette.surfaceMuted,
-    borderRadius: radii.pill,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderWidth: 1,
-    borderColor: palette.line,
-  },
   settleButtonText: {
     fontSize: 13,
     fontFamily: typography.bodyMedium,
-    color: palette.inkSoft,
+    color: palette.surface,
   },
 });
