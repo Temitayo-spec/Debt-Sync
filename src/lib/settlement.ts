@@ -10,6 +10,7 @@ export interface Expense {
   splitMode: SplitMode;
   splits: Record<string, number>;
   createdAt: string;
+  receiptUrl?: string;
 }
 
 export interface Transaction {

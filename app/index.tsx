@@ -106,12 +106,18 @@ export default function Home() {
                   {item.members.join(" • ")}
                 </Text>
                 <Pressable
-                  onPress={() => Clipboard.setStringAsync(item.inviteCode)}
+                  onPress={() => {
+                    const url = Linking.createURL(`/join`, { queryParams: { code: item.inviteCode } });
+                    Share.share({
+                      message: `Join "${item.name}" on Debt Sync — tap the link or enter code ${item.inviteCode}\n\n${url}`,
+                      url,
+                    });
+                  }}
                   style={styles.codeChip}
                   hitSlop={8}
                 >
                   <Text style={styles.inviteCode}>{item.inviteCode}</Text>
-                  <Text style={styles.copyHint}>tap to copy</Text>
+                  <Text style={styles.copyHint}>tap to invite</Text>
                 </Pressable>
               </View>
             </Pressable>

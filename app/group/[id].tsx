@@ -3,7 +3,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { exportGroupCSV } from "../../src/lib/export";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useState } from "react";
-import { Alert, Linking, Pressable, Share, StyleSheet, Text, View } from "react-native";
+import { Alert, Image, Linking, Modal, Pressable, Share, StyleSheet, Text, View } from "react-native";
 import AddExpenseModal from "../../src/components/AddExpenseModal";
 import AppScreen from "../../src/components/AppScreen";
 import GroupSettingsSheet from "../../src/components/GroupSettingsSheet";
@@ -26,6 +26,7 @@ export default function GroupScreen() {
   const [modalOpen, setModalOpen] = useState(false);
   const [editingExpense, setEditingExpense] = useState<import("../../src/lib/settlement").Expense | undefined>();
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [viewingReceipt, setViewingReceipt] = useState<string | undefined>();
   const markSettled = useStore((s) => s.markSettled);
   const deleteExpense = useStore((s) => s.deleteExpense);
   const { user } = useAuth();
@@ -308,9 +309,16 @@ export default function GroupScreen() {
                 {expense.participants.join(", ")}
               </Text>
             </View>
-            <Text style={styles.expenseAmount}>
-              ₦{expense.amount.toLocaleString()}
-            </Text>
+            <View style={styles.expenseRight}>
+              <Text style={styles.expenseAmount}>
+                ₦{expense.amount.toLocaleString()}
+              </Text>
+              {expense.receiptUrl && (
+                <Pressable onPress={() => setViewingReceipt(expense.receiptUrl)} hitSlop={8}>
+                  <Image source={{ uri: expense.receiptUrl }} style={styles.receiptThumb} />
+                </Pressable>
+              )}
+            </View>
           </Pressable>
         ))
       ) : (
@@ -392,6 +400,17 @@ export default function GroupScreen() {
           )}
         </>
       )}
+
+      <Modal visible={!!viewingReceipt} transparent animationType="fade">
+        <Pressable style={styles.receiptOverlay} onPress={() => setViewingReceipt(undefined)}>
+          {viewingReceipt && (
+            <Image source={{ uri: viewingReceipt }} style={styles.receiptFull} resizeMode="contain" />
+          )}
+          <Pressable style={styles.receiptClose} onPress={() => setViewingReceipt(undefined)}>
+            <Ionicons name="close" size={22} color={palette.surface} />
+          </Pressable>
+        </Pressable>
+      </Modal>
 
       <AddExpenseModal
         open={modalOpen}
@@ -615,10 +634,42 @@ const styles = StyleSheet.create({
     color: palette.inkSoft,
     marginTop: 6,
   },
+  expenseRight: {
+    alignItems: "flex-end",
+    gap: 8,
+  },
   expenseAmount: {
     fontFamily: typography.display,
     fontSize: 16,
     color: palette.ink,
+  },
+  receiptThumb: {
+    width: 44,
+    height: 44,
+    borderRadius: radii.sm,
+    borderWidth: 1,
+    borderColor: palette.line,
+  },
+  receiptOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.9)",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  receiptFull: {
+    width: "90%",
+    height: "70%",
+  },
+  receiptClose: {
+    position: "absolute",
+    top: 54,
+    right: 20,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: "rgba(255,255,255,0.15)",
+    alignItems: "center",
+    justifyContent: "center",
   },
   emptyCard: {
     backgroundColor: palette.surface,

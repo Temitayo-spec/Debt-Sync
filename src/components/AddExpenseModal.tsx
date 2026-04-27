@@ -11,7 +11,9 @@ import {
 } from "react-native";
 import { useEffect, useState } from "react";
 import { Ionicons } from "@expo/vector-icons";
-import { Group, useStore } from "../store/useStore";
+import * as ImagePicker from "expo-image-picker";
+import { Image } from "react-native";
+import { Group, uploadReceipt, useStore } from "../store/useStore";
 import { CATEGORIES, SplitMode } from "../lib/settlement";
 import { palette, radii, shadows, typography } from "../theme";
 
@@ -51,6 +53,8 @@ export default function AddExpenseModal({ open, setOpen, group, editingExpense }
   const [paidBy, setPaidBy] = useState(group.members[0]);
   const [splitMode, setSplitMode] = useState<SplitMode>("even");
   const [splits, setSplits] = useState<Record<string, string>>({});
+  const [receiptUri, setReceiptUri] = useState<string | undefined>();
+  const [uploadingReceipt, setUploadingReceipt] = useState(false);
   const addExpense = useStore((s) => s.addExpense);
   const updateExpense = useStore((s) => s.updateExpense);
 
@@ -67,6 +71,7 @@ export default function AddExpenseModal({ open, setOpen, group, editingExpense }
           Object.entries(editingExpense.splits).map(([k, v]) => [k, String(v)]),
         ),
       );
+      setReceiptUri(editingExpense.receiptUrl);
     } else if (open) {
       setTitle("");
       setCategory("Food");
@@ -74,6 +79,7 @@ export default function AddExpenseModal({ open, setOpen, group, editingExpense }
       setPaidBy(group.members[0]);
       setSplitMode("even");
       setSplits({});
+      setReceiptUri(undefined);
     }
   }, [open]);
 
@@ -125,8 +131,48 @@ export default function AddExpenseModal({ open, setOpen, group, editingExpense }
     return "";
   };
 
-  const handleAdd = () => {
+  const pickReceipt = async () => {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== "granted") return;
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ["images"],
+      quality: 0.7,
+      allowsEditing: true,
+    });
+
+    if (!result.canceled && result.assets[0]) {
+      setReceiptUri(result.assets[0].uri);
+    }
+  };
+
+  const takePhoto = async () => {
+    const { status } = await ImagePicker.requestCameraPermissionsAsync();
+    if (status !== "granted") return;
+
+    const result = await ImagePicker.launchCameraAsync({
+      quality: 0.7,
+      allowsEditing: true,
+    });
+
+    if (!result.canceled && result.assets[0]) {
+      setReceiptUri(result.assets[0].uri);
+    }
+  };
+
+  const handleAdd = async () => {
     if (!canSubmit) return;
+
+    setUploadingReceipt(true);
+
+    let finalReceiptUrl: string | undefined = receiptUri;
+    // upload only if it's a new local file (not already an https URL)
+    if (receiptUri && !receiptUri.startsWith("http")) {
+      const uploaded = await uploadReceipt(receiptUri);
+      finalReceiptUrl = uploaded ?? undefined;
+    }
+
+    setUploadingReceipt(false);
 
     const parsedSplits: Record<string, number> =
       splitMode !== "even"
@@ -143,6 +189,7 @@ export default function AddExpenseModal({ open, setOpen, group, editingExpense }
       participants: group.members,
       splitMode,
       splits: parsedSplits,
+      receiptUrl: finalReceiptUrl,
     };
 
     if (editingExpense) {
@@ -293,11 +340,38 @@ export default function AddExpenseModal({ open, setOpen, group, editingExpense }
               </View>
             )}
 
+            {/* Receipt */}
+            <Text style={styles.label}>Receipt (optional)</Text>
+            {receiptUri ? (
+              <View style={styles.receiptPreview}>
+                <Image source={{ uri: receiptUri }} style={styles.receiptImage} resizeMode="cover" />
+                <Pressable onPress={() => setReceiptUri(undefined)} style={styles.receiptRemove}>
+                  <Ionicons name="close-circle" size={22} color={palette.negative} />
+                </Pressable>
+              </View>
+            ) : (
+              <View style={styles.receiptRow}>
+                <Pressable onPress={pickReceipt} style={styles.receiptButton}>
+                  <Ionicons name="image-outline" size={18} color={palette.inkSoft} />
+                  <Text style={styles.receiptButtonText}>Gallery</Text>
+                </Pressable>
+                <Pressable onPress={takePhoto} style={styles.receiptButton}>
+                  <Ionicons name="camera-outline" size={18} color={palette.inkSoft} />
+                  <Text style={styles.receiptButtonText}>Camera</Text>
+                </Pressable>
+              </View>
+            )}
+
             <Pressable
               onPress={handleAdd}
-              style={[styles.button, !canSubmit && styles.buttonDisabled]}
+              style={[styles.button, (!canSubmit || uploadingReceipt) && styles.buttonDisabled]}
+              disabled={uploadingReceipt}
             >
-              <Text style={styles.buttonText}>{editingExpense ? "Save Changes" : "Add Expense"}</Text>
+              {uploadingReceipt ? (
+                <Text style={styles.buttonText}>Uploading receipt…</Text>
+              ) : (
+                <Text style={styles.buttonText}>{editingExpense ? "Save Changes" : "Add Expense"}</Text>
+              )}
             </Pressable>
 
             <Pressable onPress={() => setOpen(false)} style={styles.cancel}>
@@ -531,5 +605,45 @@ const styles = StyleSheet.create({
     color: palette.inkSoft,
     fontFamily: typography.body,
     fontSize: 16,
+  },
+  receiptRow: {
+    flexDirection: "row",
+    gap: 10,
+    marginBottom: 20,
+  },
+  receiptButton: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    paddingVertical: 12,
+    borderRadius: radii.sm,
+    borderWidth: 1,
+    borderColor: palette.line,
+    backgroundColor: palette.surfaceMuted,
+  },
+  receiptButtonText: {
+    fontFamily: typography.bodyMedium,
+    fontSize: 14,
+    color: palette.inkSoft,
+  },
+  receiptPreview: {
+    marginBottom: 20,
+    borderRadius: radii.md,
+    overflow: "hidden",
+    position: "relative",
+  },
+  receiptImage: {
+    width: "100%",
+    height: 160,
+    borderRadius: radii.md,
+  },
+  receiptRemove: {
+    position: "absolute",
+    top: 8,
+    right: 8,
+    backgroundColor: palette.surface,
+    borderRadius: 11,
   },
 });

@@ -24,6 +24,23 @@ export type PendingAction =
   | { type: "markSettled"; groupId: string; from: string; to: string; amount: number }
   | { type: "deleteExpense"; groupId: string; expenseId: string };
 
+export async function uploadReceipt(localUri: string): Promise<string | null> {
+  const ext = localUri.split(".").pop() ?? "jpg";
+  const filename = `${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
+
+  const response = await fetch(localUri);
+  const blob = await response.blob();
+
+  const { data, error } = await supabase.storage
+    .from("receipts")
+    .upload(filename, blob, { contentType: `image/${ext}` });
+
+  if (error || !data) return null;
+
+  const { data: { publicUrl } } = supabase.storage.from("receipts").getPublicUrl(data.path);
+  return publicUrl;
+}
+
 export interface PaymentInfo {
   bankName: string;
   accountNumber: string;
@@ -163,6 +180,7 @@ export const useStore = create<Store>()(
                   splitMode: (e.split_mode ?? "even") as SplitMode,
                   splits: (e.splits ?? {}) as Record<string, number>,
                   createdAt: e.created_at ?? new Date().toISOString(),
+                  receiptUrl: e.receipt_url ?? undefined,
                 })) ?? [],
               settlements:
                 settlements?.map((s) => ({
@@ -249,6 +267,7 @@ export const useStore = create<Store>()(
             participants: expense.participants,
             split_mode: expense.splitMode,
             splits: expense.splitMode !== "even" ? expense.splits : null,
+            receipt_url: expense.receiptUrl ?? null,
           })
           .select()
           .single();
@@ -265,6 +284,7 @@ export const useStore = create<Store>()(
           splitMode: (data.split_mode ?? "even") as SplitMode,
           splits: (data.splits ?? {}) as Record<string, number>,
           createdAt: data.created_at ?? new Date().toISOString(),
+          receiptUrl: data.receipt_url ?? undefined,
         };
 
         set((state) => ({
@@ -360,6 +380,7 @@ export const useStore = create<Store>()(
             participants: updates.participants,
             split_mode: updates.splitMode,
             splits: updates.splitMode !== "even" ? updates.splits : null,
+            receipt_url: updates.receiptUrl ?? null,
           })
           .eq("id", expenseId);
 
