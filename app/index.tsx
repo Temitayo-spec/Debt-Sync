@@ -1,11 +1,14 @@
 import { useRouter } from "expo-router";
 import * as Clipboard from "expo-clipboard";
 import * as Linking from "expo-linking";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Ionicons } from "@expo/vector-icons";
 import { FlatList, Pressable, ScrollView, Share, StyleSheet, Text, View } from "react-native";
 import AppScreen from "../src/components/AppScreen";
+import NotificationsSheet from "../src/components/NotificationsSheet";
 import PaymentInfoSheet from "../src/components/PaymentInfoSheet";
+import { getActivityFeed } from "../src/lib/settlement";
+import { storage } from "../src/store/useStore";
 import { supabase } from "../src/lib/supabase";
 import { useAuth } from "../src/providers/AuthProvider";
 import { useStore } from "../src/store/useStore";
@@ -17,6 +20,31 @@ export default function Home() {
   const groups = useStore((s) => s.groups);
   const fetchGroups = useStore((s) => s.fetchGroups);
   const [paymentInfoOpen, setPaymentInfoOpen] = useState(false);
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
+
+  const LAST_SEEN_KEY = "notifications-last-seen";
+  const [lastSeenAt, setLastSeenAt] = useState<string>(
+    () => storage.getString(LAST_SEEN_KEY) ?? new Date(0).toISOString(),
+  );
+
+  const unreadCount = useMemo(() => {
+    const lastSeen = new Date(lastSeenAt);
+    return groups.flatMap((g) => {
+      const activity = getActivityFeed(g.expenses, g.settlements);
+      const commentItems = g.comments;
+      return [
+        ...activity.filter((i) => new Date(i.data.createdAt) > lastSeen),
+        ...commentItems.filter((c) => new Date(c.createdAt) > lastSeen),
+      ];
+    }).length;
+  }, [groups, lastSeenAt]);
+
+  const handleOpenNotifications = () => {
+    const now = new Date().toISOString();
+    storage.set(LAST_SEEN_KEY, now);
+    setLastSeenAt(now);
+    setNotificationsOpen(true);
+  };
 
   useEffect(() => {
     fetchGroups();
@@ -42,6 +70,16 @@ export default function Home() {
               </Text>
             </View>
             <View style={styles.headerButtons}>
+              <Pressable onPress={handleOpenNotifications} style={styles.iconButton}>
+                <Ionicons name="notifications-outline" size={16} color={palette.surface} />
+                {unreadCount > 0 && (
+                  <View style={styles.badge}>
+                    <Text style={styles.badgeText}>
+                      {unreadCount > 9 ? "9+" : unreadCount}
+                    </Text>
+                  </View>
+                )}
+              </Pressable>
               <Pressable
                 onPress={() => setPaymentInfoOpen(true)}
                 style={styles.iconButton}
@@ -198,6 +236,12 @@ export default function Home() {
           onClose={() => setPaymentInfoOpen(false)}
         />
       )}
+      <NotificationsSheet
+        visible={notificationsOpen}
+        groups={groups}
+        lastSeenAt={lastSeenAt}
+        onClose={() => setNotificationsOpen(false)}
+      />
     </AppScreen>
   );
 }
@@ -253,6 +297,24 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     alignItems: "center",
     justifyContent: "center",
+    position: "relative",
+  },
+  badge: {
+    position: "absolute",
+    top: -4,
+    right: -4,
+    backgroundColor: palette.negative,
+    borderRadius: 8,
+    minWidth: 16,
+    height: 16,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 3,
+  },
+  badgeText: {
+    fontFamily: typography.bodyMedium,
+    fontSize: 9,
+    color: palette.surface,
   },
   signOutButton: {
     borderRadius: radii.pill,

@@ -14,7 +14,7 @@ import { Ionicons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
 import { Image } from "react-native";
 import { Group, uploadReceipt, useStore } from "../store/useStore";
-import { CATEGORIES, SplitMode } from "../lib/settlement";
+import { CATEGORIES, Recurrence, SplitMode } from "../lib/settlement";
 import { palette, radii, shadows, typography } from "../theme";
 
 interface Props {
@@ -55,6 +55,7 @@ export default function AddExpenseModal({ open, setOpen, group, editingExpense }
   const [splits, setSplits] = useState<Record<string, string>>({});
   const [receiptUri, setReceiptUri] = useState<string | undefined>();
   const [uploadingReceipt, setUploadingReceipt] = useState(false);
+  const [recurrence, setRecurrence] = useState<Recurrence>("none");
   const addExpense = useStore((s) => s.addExpense);
   const updateExpense = useStore((s) => s.updateExpense);
 
@@ -72,6 +73,7 @@ export default function AddExpenseModal({ open, setOpen, group, editingExpense }
         ),
       );
       setReceiptUri(editingExpense.receiptUrl);
+      setRecurrence(editingExpense.recurrence ?? "none");
     } else if (open) {
       setTitle("");
       setCategory("Food");
@@ -80,6 +82,7 @@ export default function AddExpenseModal({ open, setOpen, group, editingExpense }
       setSplitMode("even");
       setSplits({});
       setReceiptUri(undefined);
+      setRecurrence("none");
     }
   }, [open]);
 
@@ -190,6 +193,7 @@ export default function AddExpenseModal({ open, setOpen, group, editingExpense }
       splitMode,
       splits: parsedSplits,
       receiptUrl: finalReceiptUrl,
+      recurrence,
     };
 
     if (editingExpense) {
@@ -339,6 +343,22 @@ export default function AddExpenseModal({ open, setOpen, group, editingExpense }
                 ))}
               </View>
             )}
+
+            {/* Recurrence */}
+            <Text style={styles.label}>Repeat</Text>
+            <View style={styles.recurrenceRow}>
+              {(["none", "weekly", "monthly"] as Recurrence[]).map((r) => (
+                <Pressable
+                  key={r}
+                  onPress={() => setRecurrence(r)}
+                  style={[styles.recurrenceChip, recurrence === r && styles.recurrenceChipActive]}
+                >
+                  <Text style={[styles.recurrenceText, recurrence === r && styles.recurrenceTextActive]}>
+                    {r === "none" ? "Never" : r === "weekly" ? "Weekly" : "Monthly"}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
 
             {/* Receipt */}
             <Text style={styles.label}>Receipt (optional)</Text>
@@ -605,6 +625,32 @@ const styles = StyleSheet.create({
     color: palette.inkSoft,
     fontFamily: typography.body,
     fontSize: 16,
+  },
+  recurrenceRow: {
+    flexDirection: "row",
+    gap: 8,
+    marginBottom: 20,
+  },
+  recurrenceChip: {
+    flex: 1,
+    alignItems: "center",
+    paddingVertical: 10,
+    borderRadius: radii.sm,
+    borderWidth: 1,
+    borderColor: palette.line,
+    backgroundColor: palette.surfaceMuted,
+  },
+  recurrenceChipActive: {
+    backgroundColor: palette.ink,
+    borderColor: palette.ink,
+  },
+  recurrenceText: {
+    fontFamily: typography.bodyMedium,
+    fontSize: 13,
+    color: palette.inkSoft,
+  },
+  recurrenceTextActive: {
+    color: palette.surface,
   },
   receiptRow: {
     flexDirection: "row",

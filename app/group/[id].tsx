@@ -3,9 +3,10 @@ import { Ionicons } from "@expo/vector-icons";
 import { exportGroupCSV } from "../../src/lib/export";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useState } from "react";
-import { Alert, Image, Linking, Modal, Pressable, Share, StyleSheet, Text, View } from "react-native";
+import { Alert, Image, Linking, Modal, Pressable, ScrollView, Share, StyleSheet, Text, TextInput, View } from "react-native";
 import AddExpenseModal from "../../src/components/AddExpenseModal";
 import AppScreen from "../../src/components/AppScreen";
+import CommentsSheet from "../../src/components/CommentsSheet";
 import GroupSettingsSheet from "../../src/components/GroupSettingsSheet";
 import SpendingChart from "../../src/components/SpendingChart";
 import {
@@ -27,8 +28,12 @@ export default function GroupScreen() {
   const [editingExpense, setEditingExpense] = useState<import("../../src/lib/settlement").Expense | undefined>();
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [viewingReceipt, setViewingReceipt] = useState<string | undefined>();
+  const [search, setSearch] = useState("");
+  const [filterCategory, setFilterCategory] = useState<string | null>(null);
+  const [commentingExpense, setCommentingExpense] = useState<import("../../src/lib/settlement").Expense | null>(null);
   const markSettled = useStore((s) => s.markSettled);
   const deleteExpense = useStore((s) => s.deleteExpense);
+  const processRecurring = useStore((s) => s.processRecurring);
   const { user } = useAuth();
 
   const subscribeToGroup = useStore((s) => s.subscribeToGroup);
@@ -36,6 +41,10 @@ export default function GroupScreen() {
   useEffect(() => {
     const unsubscribe = subscribeToGroup(id);
     return unsubscribe;
+  }, [id]);
+
+  useEffect(() => {
+    if (group) processRecurring(id);
   }, [id]);
 
   const group = useStore((s) => s.groups.find((g) => g.id === id));
@@ -56,6 +65,17 @@ export default function GroupScreen() {
   const userBalance = getUserBalance(balances, currentUser);
   const activityFeed = getActivityFeed(group.expenses, group.settlements);
   const totalSpent = group.expenses.reduce((s, e) => s + e.amount, 0);
+
+  const usedCategories = [...new Set(group.expenses.map((e) => e.category))];
+
+  const filteredExpenses = group.expenses.filter((e) => {
+    const matchesSearch =
+      search.trim() === "" ||
+      e.title.toLowerCase().includes(search.toLowerCase()) ||
+      e.paidBy.toLowerCase().includes(search.toLowerCase());
+    const matchesCategory = filterCategory === null || e.category === filterCategory;
+    return matchesSearch && matchesCategory;
+  });
 
   const handleShare = () => {
     const settlementLines =
@@ -266,15 +286,67 @@ export default function GroupScreen() {
       <View style={styles.sectionHeader}>
         <Text style={styles.sectionTitle}>Expense ledger</Text>
         <Text style={styles.sectionHint}>
-          Every item is split evenly for now
+          {filteredExpenses.length} of {group.expenses.length} expenses
         </Text>
       </View>
 
-      {group.expenses.length > 0 ? (
-        group.expenses.map((expense) => (
+      {/* Search bar */}
+      <View style={styles.searchBar}>
+        <Ionicons name="search-outline" size={16} color={palette.inkFaint} />
+        <TextInput
+          value={search}
+          onChangeText={setSearch}
+          placeholder="Search expenses…"
+          placeholderTextColor={palette.inkFaint}
+          style={styles.searchInput}
+          returnKeyType="search"
+          clearButtonMode="while-editing"
+        />
+      </View>
+
+      {/* Category filter chips */}
+      {usedCategories.length > 1 && (
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={styles.filterScroll}
+          contentContainerStyle={styles.filterRow}
+        >
+          <Pressable
+            onPress={() => setFilterCategory(null)}
+            style={[styles.filterChip, filterCategory === null && styles.filterChipActive]}
+          >
+            <Text style={[styles.filterChipText, filterCategory === null && styles.filterChipTextActive]}>
+              All
+            </Text>
+          </Pressable>
+          {usedCategories.map((cat) => (
+            <Pressable
+              key={cat}
+              onPress={() => setFilterCategory(cat === filterCategory ? null : cat)}
+              style={[styles.filterChip, filterCategory === cat && styles.filterChipActive]}
+            >
+              <Ionicons
+                name={getCategoryIcon(cat) as any}
+                size={13}
+                color={filterCategory === cat ? palette.surface : palette.inkSoft}
+              />
+              <Text style={[styles.filterChipText, filterCategory === cat && styles.filterChipTextActive]}>
+                {cat}
+              </Text>
+            </Pressable>
+          ))}
+        </ScrollView>
+      )}
+
+      {filteredExpenses.length > 0 ? (
+        filteredExpenses.map((expense) => {
+          const commentCount = group.comments.filter((c) => c.expenseId === expense.id).length;
+          return (
           <Pressable
             key={expense.id}
             style={styles.expenseCard}
+            onPress={() => setCommentingExpense(expense)}
             onLongPress={() =>
               Alert.alert(expense.title, "What would you like to do?", [
                 { text: "Cancel", style: "cancel" },
@@ -302,30 +374,49 @@ export default function GroupScreen() {
                 />
                 <Text style={styles.expenseTitle}>{expense.title}</Text>
               </View>
-              <Text style={styles.expensePaidBy}>{expense.paidBy} paid</Text>
+              <View style={styles.expensePaidByRow}>
+                <Text style={styles.expensePaidBy}>{expense.paidBy} paid</Text>
+                {expense.recurrence !== "none" && !expense.recurrenceParentId && (
+                  <View style={styles.recurBadge}>
+                    <Ionicons name="repeat-outline" size={11} color={palette.accent} />
+                    <Text style={styles.recurBadgeText}>{expense.recurrence}</Text>
+                  </View>
+                )}
+              </View>
               <Text style={styles.expenseParticipants}>
                 {expense.splitMode === "even" ? "Split evenly" : `Custom split (${expense.splitMode})`}
                 {" · "}
                 {expense.participants.join(", ")}
               </Text>
+              <View style={styles.expenseCommentRow}>
+                <Ionicons name="chatbubble-outline" size={12} color={palette.inkFaint} />
+                <Text style={styles.expenseCommentCount}>
+                  {commentCount > 0 ? `${commentCount} comment${commentCount !== 1 ? "s" : ""}` : "Add comment"}
+                </Text>
+              </View>
             </View>
             <View style={styles.expenseRight}>
               <Text style={styles.expenseAmount}>
                 ₦{expense.amount.toLocaleString()}
               </Text>
               {expense.receiptUrl && (
-                <Pressable onPress={() => setViewingReceipt(expense.receiptUrl)} hitSlop={8}>
+                <Pressable onPress={(e) => { e.stopPropagation?.(); setViewingReceipt(expense.receiptUrl); }} hitSlop={8}>
                   <Image source={{ uri: expense.receiptUrl }} style={styles.receiptThumb} />
                 </Pressable>
               )}
             </View>
           </Pressable>
-        ))
+          );
+        })
       ) : (
         <View style={styles.emptyCard}>
-          <Text style={styles.emptyTitle}>No expenses yet</Text>
+          <Text style={styles.emptyTitle}>
+            {search || filterCategory ? "No matches" : "No expenses yet"}
+          </Text>
           <Text style={styles.emptyText}>
-            Add the first payment to start calculating balances for this group.
+            {search || filterCategory
+              ? "Try a different search or category filter."
+              : "Add the first payment to start calculating balances for this group."}
           </Text>
         </View>
       )}
@@ -400,6 +491,15 @@ export default function GroupScreen() {
           )}
         </>
       )}
+
+      <CommentsSheet
+        visible={!!commentingExpense}
+        expense={commentingExpense}
+        groupId={group.id}
+        comments={group.comments}
+        currentUserId={user?.id ?? ""}
+        onClose={() => setCommentingExpense(null)}
+      />
 
       <Modal visible={!!viewingReceipt} transparent animationType="fade">
         <Pressable style={styles.receiptOverlay} onPress={() => setViewingReceipt(undefined)}>
@@ -623,10 +723,91 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: palette.ink,
   },
+  searchBar: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    borderWidth: 1,
+    borderColor: palette.line,
+    borderRadius: radii.sm,
+    backgroundColor: palette.surfaceMuted,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    marginBottom: 12,
+  },
+  searchInput: {
+    flex: 1,
+    fontFamily: typography.body,
+    fontSize: 15,
+    color: palette.ink,
+  },
+  filterScroll: {
+    marginBottom: 16,
+  },
+  filterRow: {
+    gap: 8,
+    paddingRight: 4,
+  },
+  filterChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: radii.pill,
+    borderWidth: 1,
+    borderColor: palette.line,
+    backgroundColor: palette.surfaceMuted,
+  },
+  filterChipActive: {
+    backgroundColor: palette.ink,
+    borderColor: palette.ink,
+  },
+  filterChipText: {
+    fontFamily: typography.bodyMedium,
+    fontSize: 13,
+    color: palette.inkSoft,
+  },
+  filterChipTextActive: {
+    color: palette.surface,
+  },
+  expensePaidByRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
   expensePaidBy: {
     fontFamily: typography.body,
     fontSize: 13,
     color: palette.inkSoft,
+  },
+  recurBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 3,
+    backgroundColor: palette.surfaceMuted,
+    borderRadius: radii.pill,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderWidth: 1,
+    borderColor: palette.line,
+  },
+  recurBadgeText: {
+    fontFamily: typography.bodyMedium,
+    fontSize: 10,
+    color: palette.accent,
+    textTransform: "capitalize",
+  },
+  expenseCommentRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    marginTop: 5,
+  },
+  expenseCommentCount: {
+    fontFamily: typography.body,
+    fontSize: 11,
+    color: palette.inkFaint,
   },
   expenseParticipants: {
     fontFamily: typography.body,

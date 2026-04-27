@@ -1,7 +1,7 @@
 import { createMMKV } from "react-native-mmkv";
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
-import { Expense, Settlement, SplitMode } from "../lib/settlement";
+import { Comment, Expense, Recurrence, Settlement, SplitMode } from "../lib/settlement";
 import { supabase } from "../lib/supabase";
 
 export const storage = createMMKV();
@@ -57,6 +57,7 @@ export interface Group {
   memberPaymentInfo: Record<string, PaymentInfo>;
   expenses: Expense[];
   settlements: Settlement[];
+  comments: Comment[];
 }
 
 interface Store {
@@ -70,6 +71,8 @@ interface Store {
   createGroup: (name: string) => Promise<void>;
   addExpense: (groupId: string, expense: Omit<Expense, "id" | "createdAt">) => Promise<void>;
   updateExpense: (groupId: string, expenseId: string, updates: Omit<Expense, "id" | "createdAt">) => Promise<void>;
+  processRecurring: (groupId: string) => Promise<void>;
+  addComment: (groupId: string, expenseId: string, body: string) => Promise<void>;
   markSettled: (groupId: string, from: string, to: string, amount: number) => Promise<void>;
   deleteExpense: (groupId: string, expenseId: string) => Promise<void>;
   renameGroup: (groupId: string, name: string) => Promise<void>;
@@ -130,6 +133,7 @@ export const useStore = create<Store>()(
               { data: members },
               { data: expenses },
               { data: settlements },
+              { data: commentsData },
             ] = await Promise.all([
               supabase
                 .from("group_members")
@@ -142,6 +146,11 @@ export const useStore = create<Store>()(
                 .order("created_at", { ascending: true }),
               supabase
                 .from("settlements")
+                .select("*")
+                .eq("group_id", g.id)
+                .order("created_at", { ascending: true }),
+              supabase
+                .from("comments")
                 .select("*")
                 .eq("group_id", g.id)
                 .order("created_at", { ascending: true }),
@@ -181,6 +190,8 @@ export const useStore = create<Store>()(
                   splits: (e.splits ?? {}) as Record<string, number>,
                   createdAt: e.created_at ?? new Date().toISOString(),
                   receiptUrl: e.receipt_url ?? undefined,
+                  recurrence: (e.recurrence ?? "none") as Recurrence,
+                  recurrenceParentId: e.recurrence_parent_id ?? undefined,
                 })) ?? [],
               settlements:
                 settlements?.map((s) => ({
@@ -191,6 +202,16 @@ export const useStore = create<Store>()(
                   paymentRef: s.payment_ref ?? undefined,
                   paymentMethod: s.payment_method ?? "manual",
                   createdAt: s.created_at ?? new Date().toISOString(),
+                })) ?? [],
+              comments:
+                commentsData?.map((c) => ({
+                  id: c.id,
+                  expenseId: c.expense_id,
+                  groupId: c.group_id,
+                  userId: c.user_id,
+                  authorName: c.author_name,
+                  body: c.body,
+                  createdAt: c.created_at ?? new Date().toISOString(),
                 })) ?? [],
             };
           }),
@@ -243,6 +264,7 @@ export const useStore = create<Store>()(
           memberPaymentInfo: {},
           expenses: [],
           settlements: [],
+          comments: [],
         };
 
         set((state) => ({ groups: [newGroup, ...state.groups] }));
@@ -268,6 +290,8 @@ export const useStore = create<Store>()(
             split_mode: expense.splitMode,
             splits: expense.splitMode !== "even" ? expense.splits : null,
             receipt_url: expense.receiptUrl ?? null,
+            recurrence: expense.recurrence ?? "none",
+            recurrence_parent_id: expense.recurrenceParentId ?? null,
           })
           .select()
           .single();
@@ -285,6 +309,8 @@ export const useStore = create<Store>()(
           splits: (data.splits ?? {}) as Record<string, number>,
           createdAt: data.created_at ?? new Date().toISOString(),
           receiptUrl: data.receipt_url ?? undefined,
+          recurrence: (data.recurrence ?? "none") as Recurrence,
+          recurrenceParentId: data.recurrence_parent_id ?? undefined,
         };
 
         set((state) => ({
@@ -381,6 +407,7 @@ export const useStore = create<Store>()(
             split_mode: updates.splitMode,
             splits: updates.splitMode !== "even" ? updates.splits : null,
             receipt_url: updates.receiptUrl ?? null,
+            recurrence: updates.recurrence ?? "none",
           })
           .eq("id", expenseId);
 
@@ -396,6 +423,78 @@ export const useStore = create<Store>()(
                   ),
                 }
               : g,
+          ),
+        }));
+      },
+
+      processRecurring: async (groupId) => {
+        const group = get().groups.find((g) => g.id === groupId);
+        if (!group) return;
+
+        const now = new Date();
+        const recurringExpenses = group.expenses.filter(
+          (e) => e.recurrence !== "none" && !e.recurrenceParentId,
+        );
+
+        for (const expense of recurringExpenses) {
+          // find the most recent occurrence in this series
+          const series = group.expenses.filter(
+            (e) => e.recurrenceParentId === expense.id || e.id === expense.id,
+          );
+          const latest = series.reduce((a, b) =>
+            new Date(a.createdAt) > new Date(b.createdAt) ? a : b,
+          );
+
+          const lastDate = new Date(latest.createdAt);
+          const msPerDay = 86_400_000;
+          const interval = expense.recurrence === "weekly" ? 7 * msPerDay : 30 * msPerDay;
+          const due = new Date(lastDate.getTime() + interval);
+
+          if (now >= due) {
+            await get().addExpense(groupId, {
+              title: expense.title,
+              category: expense.category,
+              amount: expense.amount,
+              paidBy: expense.paidBy,
+              participants: expense.participants,
+              splitMode: expense.splitMode,
+              splits: expense.splits,
+              recurrence: expense.recurrence,
+              recurrenceParentId: expense.id,
+            });
+          }
+        }
+      },
+
+      addComment: async (groupId, expenseId, body) => {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return;
+
+        const group = get().groups.find((g) => g.id === groupId);
+        const memberEntry = Object.entries(group?.memberIds ?? {}).find(([, uid]) => uid === user.id);
+        const authorName = memberEntry?.[0] ?? user.email?.split("@")[0] ?? "Member";
+
+        const { data, error } = await supabase
+          .from("comments")
+          .insert({ group_id: groupId, expense_id: expenseId, user_id: user.id, author_name: authorName, body: body.trim() })
+          .select()
+          .single();
+
+        if (error || !data) return;
+
+        const newComment: Comment = {
+          id: data.id,
+          expenseId: data.expense_id,
+          groupId: data.group_id,
+          userId: data.user_id,
+          authorName: data.author_name,
+          body: data.body,
+          createdAt: data.created_at ?? new Date().toISOString(),
+        };
+
+        set((state) => ({
+          groups: state.groups.map((g) =>
+            g.id === groupId ? { ...g, comments: [...g.comments, newComment] } : g,
           ),
         }));
       },
@@ -481,6 +580,17 @@ export const useStore = create<Store>()(
             event: "*",
             schema: "public",
             table: "settlements",
+            filter: `group_id=eq.${groupId}`,
+          },
+          () => get().fetchGroups(),
+        );
+
+        channel.on(
+          "postgres_changes",
+          {
+            event: "INSERT",
+            schema: "public",
+            table: "comments",
             filter: `group_id=eq.${groupId}`,
           },
           () => get().fetchGroups(),

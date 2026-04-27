@@ -1,5 +1,7 @@
 export type SplitMode = "even" | "exact" | "percent" | "shares";
 
+export type Recurrence = "none" | "weekly" | "monthly";
+
 export interface Expense {
   id: string;
   title: string;
@@ -11,6 +13,18 @@ export interface Expense {
   splits: Record<string, number>;
   createdAt: string;
   receiptUrl?: string;
+  recurrence: Recurrence;
+  recurrenceParentId?: string;
+}
+
+export interface Comment {
+  id: string;
+  expenseId: string;
+  groupId: string;
+  userId: string;
+  authorName: string;
+  body: string;
+  createdAt: string;
 }
 
 export interface Transaction {
