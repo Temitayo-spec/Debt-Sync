@@ -399,6 +399,52 @@ const styles = StyleSheet.create({
     fontSize: 14,
     lineHeight: 21,
     color: palette.inkSoft,
+    marginBottom: 20,
+  },
+  steps: {
+    gap: 0,
+  },
+  stepRow: {
+    flexDirection: "row",
+    gap: 14,
+    alignItems: "flex-start",
+  },
+  stepDivider: {
+    height: 16,
+    width: 1,
+    backgroundColor: palette.line,
+    marginLeft: 16,
+  },
+  stepNum: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: palette.ink,
+    alignItems: "center",
+    justifyContent: "center",
+    flexShrink: 0,
+  },
+  stepNumText: {
+    fontFamily: typography.bodyMedium,
+    fontSize: 14,
+    color: palette.surface,
+  },
+  stepBody: {
+    flex: 1,
+    paddingTop: 6,
+    paddingBottom: 4,
+  },
+  stepTitle: {
+    fontFamily: typography.bodyMedium,
+    fontSize: 14,
+    color: palette.ink,
+    marginBottom: 4,
+  },
+  stepDesc: {
+    fontFamily: typography.body,
+    fontSize: 13,
+    lineHeight: 19,
+    color: palette.inkSoft,
   },
   actionRow: {
     flexDirection: "row",

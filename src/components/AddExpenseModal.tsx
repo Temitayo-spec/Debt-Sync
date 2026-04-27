@@ -9,7 +9,7 @@ import {
   Platform,
   ScrollView,
 } from "react-native";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Ionicons } from "@expo/vector-icons";
 import { Group, useStore } from "../store/useStore";
 import { CATEGORIES, SplitMode } from "../lib/settlement";
@@ -260,7 +260,7 @@ export default function AddExpenseModal({ open, setOpen, group, editingExpense }
             {/* Per-person inputs for non-even modes */}
             {splitMode !== "even" && (
               <View style={styles.perPersonContainer}>
-                {splitMode !== "even" && parsedAmount > 0 && (
+                {parsedAmount > 0 && (
                   <Text style={[styles.splitTotal, !splitValid && styles.splitTotalWarning]}>
                     {getSplitHint()}
                   </Text>
