@@ -1,17 +1,104 @@
-const { expo } = require("./app.json");
-
 module.exports = {
   expo: {
-    ...expo,
+    name: "Debt Sync",
+    slug: "debt-sync",
+    version: "1.0.0",
+    runtimeVersion: { policy: "appVersion" },
+    orientation: "portrait",
+    icon: "./assets/images/icon.png",
+    scheme: "debtsync",
+    userInterfaceStyle: "automatic",
+    newArchEnabled: true,
+    description:
+      "Track shared expenses with friends, split bills any way you like, and settle up with direct bank transfers. No awkward math, no middleman.",
+    primaryColor: "#B88E4F",
+    ios: {
+      supportsTablet: false,
+      bundleIdentifier: "com.akinbowaleo.debtsync",
+      buildNumber: "1",
+      infoPlist: {
+        NSCameraUsageDescription:
+          "Debt Sync uses your camera to capture receipts for expenses.",
+        NSPhotoLibraryUsageDescription:
+          "Debt Sync uses your photo library to attach receipt images to expenses.",
+        NSUserNotificationsUsageDescription:
+          "Debt Sync sends you notifications when group members add expenses or settle up.",
+      },
+      config: { usesNonExemptEncryption: false },
+    },
     android: {
-      ...expo.android,
+      adaptiveIcon: {
+        backgroundColor: "#E6F4FE",
+        foregroundImage: "./assets/images/android-icon-foreground.png",
+        backgroundImage: "./assets/images/android-icon-background.png",
+        monochromeImage: "./assets/images/android-icon-monochrome.png",
+      },
+      package: "com.akinbowaleo.debtsync",
+      edgeToEdgeEnabled: true,
+      predictiveBackGestureEnabled: false,
+      permissions: [
+        "android.permission.CAMERA",
+        "android.permission.READ_MEDIA_IMAGES",
+        "android.permission.POST_NOTIFICATIONS",
+        "android.permission.VIBRATE",
+        "android.permission.RECEIVE_BOOT_COMPLETED",
+      ],
       ...(process.env.GOOGLE_SERVICES_JSON
         ? { googleServicesFile: process.env.GOOGLE_SERVICES_JSON }
         : {}),
     },
+    web: {
+      output: "static",
+      favicon: "./assets/images/favicon.png",
+    },
     plugins: [
-      ...expo.plugins,
+      "expo-router",
+      [
+        "expo-image-picker",
+        {
+          photosPermission:
+            "Debt Sync uses your photos to attach receipts to expenses.",
+          cameraPermission:
+            "Debt Sync uses your camera to capture receipts.",
+        },
+      ],
+      [
+        "expo-notifications",
+        {
+          icon: "./assets/images/icon.png",
+          color: "#B88E4F",
+          sounds: [],
+          androidMode: "default",
+          androidCollapsedTitle: "Debt Sync",
+        },
+      ],
+      [
+        "expo-splash-screen",
+        {
+          image: "./assets/images/splash-icon.png",
+          imageWidth: 200,
+          resizeMode: "contain",
+          backgroundColor: "#FAF8F5",
+          dark: { backgroundColor: "#1C1917" },
+        },
+      ],
+      "expo-sqlite",
+      "expo-updates",
       "expo-web-browser",
     ],
+    updates: {
+      url: "https://u.expo.dev/a6bcd473-5f8f-409a-bc25-6041d63e4ac6",
+      fallbackToCacheTimeout: 0,
+      checkAutomatically: "ON_LOAD",
+    },
+    extra: {
+      router: {},
+      eas: { projectId: "a6bcd473-5f8f-409a-bc25-6041d63e4ac6" },
+    },
+    experiments: {
+      typedRoutes: true,
+      reactCompiler: true,
+    },
+    owner: "akinbowaleo",
   },
 };
