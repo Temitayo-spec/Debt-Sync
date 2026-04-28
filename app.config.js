@@ -5,9 +5,13 @@ module.exports = {
     ...expo,
     android: {
       ...expo.android,
-      googleServicesFile:
-        process.env.GOOGLE_SERVICES_JSON || expo.android?.googleServicesFile,
+      ...(process.env.GOOGLE_SERVICES_JSON
+        ? { googleServicesFile: process.env.GOOGLE_SERVICES_JSON }
+        : {}),
     },
-    plugins: ["expo-web-browser"],
+    plugins: [
+      ...expo.plugins,
+      "expo-web-browser",
+    ],
   },
 };
