@@ -8,5 +8,6 @@ module.exports = {
       googleServicesFile:
         process.env.GOOGLE_SERVICES_JSON || expo.android?.googleServicesFile,
     },
+    plugins: ["expo-web-browser"],
   },
 };
