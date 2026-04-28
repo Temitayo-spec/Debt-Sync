@@ -32,6 +32,7 @@ export default function GroupSettingsSheet({
   onLeaveOrDelete,
 }: Props) {
   const renameGroup = useStore((s) => s.renameGroup);
+  const setBudget = useStore((s) => s.setBudget);
   const removeGroupMember = useStore((s) => s.removeGroupMember);
   const leaveGroup = useStore((s) => s.leaveGroup);
   const deleteGroup = useStore((s) => s.deleteGroup);
@@ -39,6 +40,8 @@ export default function GroupSettingsSheet({
   const [nameValue, setNameValue] = useState(group.name);
   const [renaming, setRenaming] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [budgetValue, setBudgetValue] = useState(group.budget ? String(group.budget) : "");
+  const [savingBudget, setSavingBudget] = useState(false);
 
   const isOwner = group.createdBy === currentUserId;
 
@@ -52,6 +55,13 @@ export default function GroupSettingsSheet({
     await renameGroup(group.id, trimmed);
     setSaving(false);
     setRenaming(false);
+  };
+
+  const handleSaveBudget = async () => {
+    setSavingBudget(true);
+    const parsed = parseFloat(budgetValue);
+    await setBudget(group.id, budgetValue.trim() === "" ? null : isNaN(parsed) ? null : parsed);
+    setSavingBudget(false);
   };
 
   const handleRemoveMember = (memberName: string) => {
@@ -195,6 +205,32 @@ export default function GroupSettingsSheet({
             </View>
 
             {/* Danger zone */}
+            {/* Budget */}
+            <Text style={[styles.label, { marginTop: 8 }]}>Spending Budget (₦)</Text>
+            <View style={styles.budgetRow}>
+              <TextInput
+                value={budgetValue}
+                onChangeText={setBudgetValue}
+                placeholder="No limit set"
+                placeholderTextColor={palette.inkFaint}
+                keyboardType="numeric"
+                style={[styles.input, { flex: 1 }]}
+                returnKeyType="done"
+                onSubmitEditing={handleSaveBudget}
+              />
+              <Pressable
+                onPress={handleSaveBudget}
+                style={[styles.saveChip, savingBudget && styles.saveChipDisabled]}
+                disabled={savingBudget}
+              >
+                {savingBudget ? (
+                  <ActivityIndicator size="small" color={palette.surface} />
+                ) : (
+                  <Text style={styles.saveChipText}>Set</Text>
+                )}
+              </Pressable>
+            </View>
+
             <View style={styles.dangerZone}>
               <Text style={styles.dangerLabel}>Danger Zone</Text>
 
@@ -275,6 +311,12 @@ const styles = StyleSheet.create({
     gap: 10,
     alignItems: "center",
     marginBottom: 20,
+  },
+  budgetRow: {
+    flexDirection: "row",
+    gap: 10,
+    alignItems: "center",
+    marginBottom: 24,
   },
   input: {
     borderWidth: 1,

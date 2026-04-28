@@ -1,7 +1,13 @@
 import { createMMKV } from "react-native-mmkv";
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
-import { Comment, Expense, Recurrence, Settlement, SplitMode } from "../lib/settlement";
+import {
+  Comment,
+  Expense,
+  Recurrence,
+  Settlement,
+  SplitMode,
+} from "../lib/settlement";
 import { supabase } from "../lib/supabase";
 
 export const storage = createMMKV();
@@ -20,8 +26,18 @@ const mmkvStorage = {
 };
 
 export type PendingAction =
-  | { type: "addExpense"; groupId: string; expense: Omit<Expense, "id" | "createdAt"> }
-  | { type: "markSettled"; groupId: string; from: string; to: string; amount: number }
+  | {
+      type: "addExpense";
+      groupId: string;
+      expense: Omit<Expense, "id" | "createdAt">;
+    }
+  | {
+      type: "markSettled";
+      groupId: string;
+      from: string;
+      to: string;
+      amount: number;
+    }
   | { type: "deleteExpense"; groupId: string; expenseId: string };
 
 export async function uploadReceipt(localUri: string): Promise<string | null> {
@@ -37,7 +53,9 @@ export async function uploadReceipt(localUri: string): Promise<string | null> {
 
   if (error || !data) return null;
 
-  const { data: { publicUrl } } = supabase.storage.from("receipts").getPublicUrl(data.path);
+  const {
+    data: { publicUrl },
+  } = supabase.storage.from("receipts").getPublicUrl(data.path);
   return publicUrl;
 }
 
@@ -58,6 +76,7 @@ export interface Group {
   expenses: Expense[];
   settlements: Settlement[];
   comments: Comment[];
+  budget?: number;
 }
 
 interface Store {
@@ -69,14 +88,35 @@ interface Store {
   processPendingActions: () => Promise<void>;
   fetchGroups: () => Promise<void>;
   createGroup: (name: string) => Promise<void>;
-  addExpense: (groupId: string, expense: Omit<Expense, "id" | "createdAt">) => Promise<void>;
-  updateExpense: (groupId: string, expenseId: string, updates: Omit<Expense, "id" | "createdAt">) => Promise<void>;
+  addExpense: (
+    groupId: string,
+    expense: Omit<Expense, "id" | "createdAt">,
+  ) => Promise<void>;
+  updateExpense: (
+    groupId: string,
+    expenseId: string,
+    updates: Omit<Expense, "id" | "createdAt">,
+  ) => Promise<void>;
   processRecurring: (groupId: string) => Promise<void>;
-  addComment: (groupId: string, expenseId: string, body: string) => Promise<void>;
-  markSettled: (groupId: string, from: string, to: string, amount: number) => Promise<void>;
+  addComment: (
+    groupId: string,
+    expenseId: string,
+    body: string,
+  ) => Promise<void>;
+  markSettled: (
+    groupId: string,
+    from: string,
+    to: string,
+    amount: number,
+  ) => Promise<void>;
   deleteExpense: (groupId: string, expenseId: string) => Promise<void>;
   renameGroup: (groupId: string, name: string) => Promise<void>;
-  removeGroupMember: (groupId: string, memberUserId: string, memberName: string) => Promise<void>;
+  setBudget: (groupId: string, budget: number | null) => Promise<void>;
+  removeGroupMember: (
+    groupId: string,
+    memberUserId: string,
+    memberName: string,
+  ) => Promise<void>;
   leaveGroup: (groupId: string) => Promise<void>;
   deleteGroup: (groupId: string) => Promise<void>;
   subscribeToGroup: (groupId: string) => () => void;
@@ -105,7 +145,12 @@ export const useStore = create<Store>()(
           if (action.type === "addExpense") {
             await get().addExpense(action.groupId, action.expense);
           } else if (action.type === "markSettled") {
-            await get().markSettled(action.groupId, action.from, action.to, action.amount);
+            await get().markSettled(
+              action.groupId,
+              action.from,
+              action.to,
+              action.amount,
+            );
           } else if (action.type === "deleteExpense") {
             await get().deleteExpense(action.groupId, action.expenseId);
           }
@@ -137,7 +182,9 @@ export const useStore = create<Store>()(
             ] = await Promise.all([
               supabase
                 .from("group_members")
-                .select("name, user_id, profiles(bank_name, account_number, account_name)")
+                .select(
+                  "name, user_id, profiles(bank_name, account_number, account_name)",
+                )
                 .eq("group_id", g.id),
               supabase
                 .from("expenses")
@@ -175,6 +222,7 @@ export const useStore = create<Store>()(
               name: g.name,
               inviteCode: g.invite_code,
               createdBy: g.created_by,
+              budget: g.budget ?? undefined,
               members: members?.map((m: any) => m.name) ?? [],
               memberIds,
               memberPaymentInfo,
@@ -273,7 +321,10 @@ export const useStore = create<Store>()(
       addExpense: async (groupId, expense) => {
         if (!get().isOnline) {
           set((state) => ({
-            pendingActions: [...state.pendingActions, { type: "addExpense", groupId, expense }],
+            pendingActions: [
+              ...state.pendingActions,
+              { type: "addExpense", groupId, expense },
+            ],
           }));
           return;
         }
@@ -322,7 +373,9 @@ export const useStore = create<Store>()(
         }));
 
         // notify other group members
-        const { data: { user } } = await supabase.auth.getUser();
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
         const group = get().groups.find((g) => g.id === groupId);
         if (user && group) {
           supabase.functions.invoke("notify-expense", {
@@ -341,7 +394,10 @@ export const useStore = create<Store>()(
       markSettled: async (groupId, from, to, amount) => {
         if (!get().isOnline) {
           set((state) => ({
-            pendingActions: [...state.pendingActions, { type: "markSettled", groupId, from, to, amount }],
+            pendingActions: [
+              ...state.pendingActions,
+              { type: "markSettled", groupId, from, to, amount },
+            ],
           }));
           return;
         }
@@ -374,7 +430,10 @@ export const useStore = create<Store>()(
       deleteExpense: async (groupId, expenseId) => {
         if (!get().isOnline) {
           set((state) => ({
-            pendingActions: [...state.pendingActions, { type: "deleteExpense", groupId, expenseId }],
+            pendingActions: [
+              ...state.pendingActions,
+              { type: "deleteExpense", groupId, expenseId },
+            ],
           }));
           return;
         }
@@ -447,7 +506,8 @@ export const useStore = create<Store>()(
 
           const lastDate = new Date(latest.createdAt);
           const msPerDay = 86_400_000;
-          const interval = expense.recurrence === "weekly" ? 7 * msPerDay : 30 * msPerDay;
+          const interval =
+            expense.recurrence === "weekly" ? 7 * msPerDay : 30 * msPerDay;
           const due = new Date(lastDate.getTime() + interval);
 
           if (now >= due) {
@@ -467,16 +527,27 @@ export const useStore = create<Store>()(
       },
 
       addComment: async (groupId, expenseId, body) => {
-        const { data: { user } } = await supabase.auth.getUser();
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
         if (!user) return;
 
         const group = get().groups.find((g) => g.id === groupId);
-        const memberEntry = Object.entries(group?.memberIds ?? {}).find(([, uid]) => uid === user.id);
-        const authorName = memberEntry?.[0] ?? user.email?.split("@")[0] ?? "Member";
+        const memberEntry = Object.entries(group?.memberIds ?? {}).find(
+          ([, uid]) => uid === user.id,
+        );
+        const authorName =
+          memberEntry?.[0] ?? user.email?.split("@")[0] ?? "Member";
 
         const { data, error } = await supabase
           .from("comments")
-          .insert({ group_id: groupId, expense_id: expenseId, user_id: user.id, author_name: authorName, body: body.trim() })
+          .insert({
+            group_id: groupId,
+            expense_id: expenseId,
+            user_id: user.id,
+            author_name: authorName,
+            body: body.trim(),
+          })
           .select()
           .single();
 
@@ -494,7 +565,9 @@ export const useStore = create<Store>()(
 
         set((state) => ({
           groups: state.groups.map((g) =>
-            g.id === groupId ? { ...g, comments: [...g.comments, newComment] } : g,
+            g.id === groupId
+              ? { ...g, comments: [...g.comments, newComment] }
+              : g,
           ),
         }));
       },
@@ -510,6 +583,21 @@ export const useStore = create<Store>()(
         set((state) => ({
           groups: state.groups.map((g) =>
             g.id === groupId ? { ...g, name } : g,
+          ),
+        }));
+      },
+
+      setBudget: async (groupId, budget) => {
+        const { error } = await supabase
+          .from("groups")
+          .update({ budget })
+          .eq("id", groupId);
+
+        if (error) return;
+
+        set((state) => ({
+          groups: state.groups.map((g) =>
+            g.id === groupId ? { ...g, budget: budget ?? undefined } : g,
           ),
         }));
       },
@@ -533,7 +621,9 @@ export const useStore = create<Store>()(
       },
 
       leaveGroup: async (groupId) => {
-        const { data: { user } } = await supabase.auth.getUser();
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
         if (!user) return;
 
         await supabase

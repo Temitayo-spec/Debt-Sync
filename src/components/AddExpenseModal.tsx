@@ -51,6 +51,8 @@ export default function AddExpenseModal({ open, setOpen, group, editingExpense }
   const [category, setCategory] = useState("Food");
   const [amount, setAmount] = useState("");
   const [paidBy, setPaidBy] = useState(group.members[0]);
+  const [participants, setParticipants] = useState<string[]>(group.members);
+  const [guestName, setGuestName] = useState("");
   const [splitMode, setSplitMode] = useState<SplitMode>("even");
   const [splits, setSplits] = useState<Record<string, string>>({});
   const [receiptUri, setReceiptUri] = useState<string | undefined>();
@@ -74,11 +76,14 @@ export default function AddExpenseModal({ open, setOpen, group, editingExpense }
       );
       setReceiptUri(editingExpense.receiptUrl);
       setRecurrence(editingExpense.recurrence ?? "none");
+      setParticipants(editingExpense.participants);
     } else if (open) {
       setTitle("");
       setCategory("Food");
       setAmount("");
       setPaidBy(group.members[0]);
+      setParticipants(group.members);
+      setGuestName("");
       setSplitMode("even");
       setSplits({});
       setReceiptUri(undefined);
@@ -90,16 +95,29 @@ export default function AddExpenseModal({ open, setOpen, group, editingExpense }
 
   const handleModeChange = (mode: SplitMode) => {
     setSplitMode(mode);
-    setSplits(initSplits(mode, group.members, amount));
+    setSplits(initSplits(mode, participants, amount));
   };
 
   const handleAmountChange = (val: string) => {
     setAmount(val);
     if (splitMode === "exact") {
       const total = parseFloat(val) || 0;
-      const share = total > 0 ? Math.floor(total / group.members.length).toString() : "";
-      setSplits(Object.fromEntries(group.members.map((m) => [m, share])));
+      const share = total > 0 ? Math.floor(total / participants.length).toString() : "";
+      setSplits(Object.fromEntries(participants.map((m) => [m, share])));
     }
+  };
+
+  const toggleParticipant = (name: string) => {
+    setParticipants((prev) =>
+      prev.includes(name) ? prev.filter((p) => p !== name) : [...prev, name],
+    );
+  };
+
+  const addGuest = () => {
+    const name = guestName.trim();
+    if (!name || participants.includes(name)) return;
+    setParticipants((prev) => [...prev, name]);
+    setGuestName("");
   };
 
   const splitTotal =
@@ -189,7 +207,7 @@ export default function AddExpenseModal({ open, setOpen, group, editingExpense }
       category,
       amount: parsedAmount,
       paidBy,
-      participants: group.members,
+      participants,
       splitMode,
       splits: parsedSplits,
       receiptUrl: finalReceiptUrl,
@@ -271,7 +289,7 @@ export default function AddExpenseModal({ open, setOpen, group, editingExpense }
             {/* Paid by */}
             <Text style={styles.label}>Paid by</Text>
             <View style={styles.chipRow}>
-              {group.members.map((member) => (
+              {participants.map((member) => (
                 <Pressable
                   key={member}
                   onPress={() => setPaidBy(member)}
@@ -284,8 +302,49 @@ export default function AddExpenseModal({ open, setOpen, group, editingExpense }
               ))}
             </View>
 
+            {/* Participants */}
+            <Text style={styles.label}>Participants</Text>
+            <View style={styles.chipRow}>
+              {[...group.members, ...participants.filter((p) => !group.members.includes(p))].map((member) => {
+                const included = participants.includes(member);
+                const isGuest = !group.members.includes(member);
+                return (
+                  <Pressable
+                    key={member}
+                    onPress={() => toggleParticipant(member)}
+                    style={[styles.chip, included && styles.chipActive]}
+                  >
+                    {isGuest && (
+                      <Ionicons name="person-add-outline" size={12} color={included ? palette.surface : palette.inkSoft} />
+                    )}
+                    <Text style={[styles.chipText, included && styles.chipTextActive]}>
+                      {member}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+            <View style={styles.guestRow}>
+              <TextInput
+                value={guestName}
+                onChangeText={setGuestName}
+                placeholder="Add guest by name…"
+                placeholderTextColor={palette.inkFaint}
+                style={[styles.input, { flex: 1, marginBottom: 0 }]}
+                returnKeyType="done"
+                onSubmitEditing={addGuest}
+              />
+              <Pressable
+                onPress={addGuest}
+                style={[styles.guestAddButton, !guestName.trim() && styles.guestAddButtonDisabled]}
+                disabled={!guestName.trim()}
+              >
+                <Ionicons name="add" size={18} color={palette.surface} />
+              </Pressable>
+            </View>
+
             {/* Split mode */}
-            <Text style={styles.label}>Split</Text>
+            <Text style={[styles.label, { marginTop: 20 }]}>Split</Text>
             <View style={styles.splitModeRow}>
               {SPLIT_MODES.map(({ mode, label }) => (
                 <Pressable
@@ -316,7 +375,7 @@ export default function AddExpenseModal({ open, setOpen, group, editingExpense }
                     {getSplitHint()}
                   </Text>
                 )}
-                {group.members.map((member) => (
+                {participants.map((member) => (
                   <View key={member} style={styles.perPersonRow}>
                     <Text style={styles.perPersonName}>{member}</Text>
                     <View style={styles.perPersonInputWrap}>
@@ -510,6 +569,23 @@ const styles = StyleSheet.create({
   },
   chipTextActive: {
     color: palette.surface,
+  },
+  guestRow: {
+    flexDirection: "row",
+    gap: 10,
+    alignItems: "center",
+    marginBottom: 4,
+  },
+  guestAddButton: {
+    width: 44,
+    height: 44,
+    borderRadius: radii.sm,
+    backgroundColor: palette.accent,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  guestAddButtonDisabled: {
+    backgroundColor: palette.inkFaint,
   },
   splitModeRow: {
     flexDirection: "row",

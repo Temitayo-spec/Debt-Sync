@@ -1,14 +1,26 @@
-import * as Clipboard from "expo-clipboard";
 import { Ionicons } from "@expo/vector-icons";
-import { exportGroupCSV } from "../../src/lib/export";
+import * as Clipboard from "expo-clipboard";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useState } from "react";
-import { Alert, Image, Linking, Modal, Pressable, ScrollView, Share, StyleSheet, Text, TextInput, View } from "react-native";
+import {
+  Alert,
+  Image,
+  Linking,
+  Modal,
+  Pressable,
+  ScrollView,
+  Share,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from "react-native";
 import AddExpenseModal from "../../src/components/AddExpenseModal";
 import AppScreen from "../../src/components/AppScreen";
 import CommentsSheet from "../../src/components/CommentsSheet";
 import GroupSettingsSheet from "../../src/components/GroupSettingsSheet";
 import SpendingChart from "../../src/components/SpendingChart";
+import { exportGroupCSV } from "../../src/lib/export";
 import {
   calculateBalances,
   getActivityFeed,
@@ -25,12 +37,18 @@ export default function GroupScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const [modalOpen, setModalOpen] = useState(false);
-  const [editingExpense, setEditingExpense] = useState<import("../../src/lib/settlement").Expense | undefined>();
+  const [editingExpense, setEditingExpense] = useState<
+    import("../../src/lib/settlement").Expense | undefined
+  >();
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [viewingReceipt, setViewingReceipt] = useState<string | undefined>();
   const [search, setSearch] = useState("");
   const [filterCategory, setFilterCategory] = useState<string | null>(null);
-  const [commentingExpense, setCommentingExpense] = useState<import("../../src/lib/settlement").Expense | null>(null);
+  const [commentingExpense, setCommentingExpense] = useState<
+    import("../../src/lib/settlement").Expense | null
+  >(null);
+  const [historyExpanded, setHistoryExpanded] = useState(false);
+  const addExpense = useStore((s) => s.addExpense);
   const markSettled = useStore((s) => s.markSettled);
   const deleteExpense = useStore((s) => s.deleteExpense);
   const processRecurring = useStore((s) => s.processRecurring);
@@ -65,6 +83,9 @@ export default function GroupScreen() {
   const userBalance = getUserBalance(balances, currentUser);
   const activityFeed = getActivityFeed(group.expenses, group.settlements);
   const totalSpent = group.expenses.reduce((s, e) => s + e.amount, 0);
+  const budgetPct = group.budget ? Math.min(totalSpent / group.budget, 1) : 0;
+  const budgetWarning = group.budget ? totalSpent >= group.budget * 0.8 : false;
+  const budgetExceeded = group.budget ? totalSpent >= group.budget : false;
 
   const usedCategories = [...new Set(group.expenses.map((e) => e.category))];
 
@@ -73,14 +94,17 @@ export default function GroupScreen() {
       search.trim() === "" ||
       e.title.toLowerCase().includes(search.toLowerCase()) ||
       e.paidBy.toLowerCase().includes(search.toLowerCase());
-    const matchesCategory = filterCategory === null || e.category === filterCategory;
+    const matchesCategory =
+      filterCategory === null || e.category === filterCategory;
     return matchesSearch && matchesCategory;
   });
 
   const handleShare = () => {
     const settlementLines =
       settlements.length > 0
-        ? settlements.map((s) => `• ${s.from} → ${s.to}: ₦${s.amount.toLocaleString()}`).join("\n")
+        ? settlements
+            .map((s) => `• ${s.from} → ${s.to}: ₦${s.amount.toLocaleString()}`)
+            .join("\n")
         : "Everyone is settled up ✅";
 
     const memberBalanceLines = group.members
@@ -121,8 +145,15 @@ export default function GroupScreen() {
             <Ionicons name="share-outline" size={14} color={palette.inkSoft} />
             <Text style={styles.shareButtonText}>Share</Text>
           </Pressable>
-          <Pressable onPress={() => setSettingsOpen(true)} style={styles.settingsButton}>
-            <Ionicons name="ellipsis-horizontal" size={18} color={palette.inkSoft} />
+          <Pressable
+            onPress={() => setSettingsOpen(true)}
+            style={styles.settingsButton}
+          >
+            <Ionicons
+              name="ellipsis-horizontal"
+              size={18}
+              color={palette.inkSoft}
+            />
           </Pressable>
         </View>
       </View>
@@ -138,13 +169,112 @@ export default function GroupScreen() {
             <Text style={styles.heroStatLabel}>Expenses</Text>
           </View>
           <View style={styles.heroStatCard}>
+            <Text style={styles.heroStatValue}>
+              ₦{totalSpent.toLocaleString()}
+            </Text>
+            <Text style={styles.heroStatLabel}>Total spent</Text>
+          </View>
+          <View style={styles.heroStatCard}>
             <Text style={styles.heroStatValue}>{settlements.length}</Text>
-            <Text style={styles.heroStatLabel}>Open settlements</Text>
+            <Text style={styles.heroStatLabel}>To settle</Text>
           </View>
         </View>
+
+        {group.expenses.length > 0 &&
+          (() => {
+            const topSpender = group.members.reduce((best, m) => {
+              const paid = group.expenses
+                .filter((e) => e.paidBy === m)
+                .reduce((s, e) => s + e.amount, 0);
+              const bestPaid = group.expenses
+                .filter((e) => e.paidBy === best)
+                .reduce((s, e) => s + e.amount, 0);
+              return paid > bestPaid ? m : best;
+            }, group.members[0]);
+            const topCategory = Object.entries(
+              group.expenses.reduce(
+                (acc, e) => ({
+                  ...acc,
+                  [e.category]: (acc[e.category] ?? 0) + e.amount,
+                }),
+                {} as Record<string, number>,
+              ),
+            ).sort((a, b) => b[1] - a[1])[0];
+
+            return (
+              <View style={styles.heroInsights}>
+                <View style={styles.heroInsightItem}>
+                  <Ionicons
+                    name="trophy-outline"
+                    size={12}
+                    color={palette.accentSoft}
+                  />
+                  <Text style={styles.heroInsightText}>
+                    Top payer: {topSpender}
+                  </Text>
+                </View>
+                {topCategory && (
+                  <View style={styles.heroInsightItem}>
+                    <Ionicons
+                      name={getCategoryIcon(topCategory[0]) as any}
+                      size={12}
+                      color={palette.accentSoft}
+                    />
+                    <Text style={styles.heroInsightText}>
+                      {topCategory[0]} leads spending
+                    </Text>
+                  </View>
+                )}
+              </View>
+            );
+          })()}
       </View>
 
       <SpendingChart expenses={group.expenses} />
+
+      {group.budget && (
+        <View
+          style={[
+            styles.budgetCard,
+            budgetExceeded && styles.budgetCardExceeded,
+          ]}
+        >
+          <View style={styles.budgetRow}>
+            <Ionicons
+              name={budgetExceeded ? "warning-outline" : "wallet-outline"}
+              size={15}
+              color={
+                budgetExceeded
+                  ? palette.negative
+                  : budgetWarning
+                    ? "#f59e0b"
+                    : palette.inkSoft
+              }
+            />
+            <Text
+              style={[
+                styles.budgetLabel,
+                budgetExceeded && styles.budgetLabelExceeded,
+              ]}
+            >
+              {budgetExceeded
+                ? `Over budget by ₦${(totalSpent - group.budget).toLocaleString()}`
+                : `₦${totalSpent.toLocaleString()} of ₦${group.budget.toLocaleString()} budget`}
+            </Text>
+            <Text style={styles.budgetPct}>{Math.round(budgetPct * 100)}%</Text>
+          </View>
+          <View style={styles.budgetTrack}>
+            <View
+              style={[
+                styles.budgetFill,
+                { width: `${Math.round(budgetPct * 100)}%` },
+                budgetExceeded && styles.budgetFillExceeded,
+                budgetWarning && !budgetExceeded && styles.budgetFillWarning,
+              ]}
+            />
+          </View>
+        </View>
+      )}
 
       <View
         style={[
@@ -214,27 +344,47 @@ export default function GroupScreen() {
                 </Text>
               </View>
 
-              {iAmPaying && (
-                recipientInfo ? (
+              {iAmPaying &&
+                (recipientInfo ? (
                   <View style={styles.bankDetails}>
                     <Text style={styles.bankDetailsLabel}>Pay to</Text>
                     <View style={styles.bankDetailsRow}>
                       <View style={styles.bankDetailsInfo}>
                         <View style={styles.bankDetailRow}>
-                          <Ionicons name="business-outline" size={13} color={palette.inkSoft} />
-                          <Text style={styles.bankDetailsBank}>{recipientInfo.bankName}</Text>
+                          <Ionicons
+                            name="business-outline"
+                            size={13}
+                            color={palette.inkSoft}
+                          />
+                          <Text style={styles.bankDetailsBank}>
+                            {recipientInfo.bankName}
+                          </Text>
                         </View>
                         <View style={styles.bankDetailRow}>
-                          <Ionicons name="person-outline" size={13} color={palette.inkSoft} />
-                          <Text style={styles.bankDetailsName}>{recipientInfo.accountName}</Text>
+                          <Ionicons
+                            name="person-outline"
+                            size={13}
+                            color={palette.inkSoft}
+                          />
+                          <Text style={styles.bankDetailsName}>
+                            {recipientInfo.accountName}
+                          </Text>
                         </View>
                         <View style={styles.bankDetailRow}>
-                          <Ionicons name="keypad-outline" size={13} color={palette.inkSoft} />
-                          <Text style={styles.bankDetailsNumber}>{recipientInfo.accountNumber}</Text>
+                          <Ionicons
+                            name="keypad-outline"
+                            size={13}
+                            color={palette.inkSoft}
+                          />
+                          <Text style={styles.bankDetailsNumber}>
+                            {recipientInfo.accountNumber}
+                          </Text>
                         </View>
                       </View>
                       <Pressable
-                        onPress={() => Clipboard.setStringAsync(recipientInfo.accountNumber)}
+                        onPress={() =>
+                          Clipboard.setStringAsync(recipientInfo.accountNumber)
+                        }
                         style={styles.copyButton}
                         hitSlop={8}
                       >
@@ -245,25 +395,36 @@ export default function GroupScreen() {
                 ) : (
                   <View style={styles.noBankDetails}>
                     <Text style={styles.noBankDetailsText}>
-                      {settlement.to} hasn't added bank details yet. Nudge them to set it up.
+                      {settlement.to} hasn't added bank details yet. Nudge them
+                      to set it up.
                     </Text>
                   </View>
-                )
-              )}
+                ))}
 
               <View style={styles.settlementActions}>
                 <Pressable
                   onPress={() =>
-                    Linking.openURL(`whatsapp://send?text=${buildNudgeMessage()}`)
+                    Linking.openURL(
+                      `whatsapp://send?text=${buildNudgeMessage()}`,
+                    )
                   }
                   style={styles.nudgeButton}
                 >
-                  <Ionicons name="chatbubble-outline" size={13} color={palette.inkSoft} />
+                  <Ionicons
+                    name="chatbubble-outline"
+                    size={13}
+                    color={palette.inkSoft}
+                  />
                   <Text style={styles.nudgeButtonText}>Nudge</Text>
                 </Pressable>
                 <Pressable
                   onPress={() =>
-                    markSettled(group.id, settlement.from, settlement.to, settlement.amount)
+                    markSettled(
+                      group.id,
+                      settlement.from,
+                      settlement.to,
+                      settlement.amount,
+                    )
                   }
                   style={styles.settleButton}
                 >
@@ -281,6 +442,44 @@ export default function GroupScreen() {
             will appear here.
           </Text>
         </View>
+      )}
+
+      {group.settlements.length > 0 && (
+        <>
+          <Pressable
+            style={styles.historyToggle}
+            onPress={() => setHistoryExpanded((v) => !v)}
+          >
+            <Ionicons
+              name={historyExpanded ? "chevron-down" : "chevron-forward"}
+              size={14}
+              color={palette.inkSoft}
+            />
+            <Text style={styles.historyToggleText}>
+              Settlement history ({group.settlements.length})
+            </Text>
+          </Pressable>
+
+          {historyExpanded &&
+            group.settlements.map((s) => (
+              <View key={s.id} style={styles.historyRow}>
+                <Ionicons
+                  name="checkmark-circle"
+                  size={14}
+                  color={palette.positive}
+                />
+                <Text style={styles.historyText}>
+                  <Text style={styles.historyName}>{s.from}</Text>
+                  {" paid "}
+                  <Text style={styles.historyName}>{s.to}</Text>
+                </Text>
+                <Text style={styles.historyAmount}>
+                  ₦{s.amount.toLocaleString()}
+                </Text>
+                <Text style={styles.historyTime}>{timeAgo(s.createdAt)}</Text>
+              </View>
+            ))}
+        </>
       )}
 
       <View style={styles.sectionHeader}>
@@ -314,24 +513,44 @@ export default function GroupScreen() {
         >
           <Pressable
             onPress={() => setFilterCategory(null)}
-            style={[styles.filterChip, filterCategory === null && styles.filterChipActive]}
+            style={[
+              styles.filterChip,
+              filterCategory === null && styles.filterChipActive,
+            ]}
           >
-            <Text style={[styles.filterChipText, filterCategory === null && styles.filterChipTextActive]}>
+            <Text
+              style={[
+                styles.filterChipText,
+                filterCategory === null && styles.filterChipTextActive,
+              ]}
+            >
               All
             </Text>
           </Pressable>
           {usedCategories.map((cat) => (
             <Pressable
               key={cat}
-              onPress={() => setFilterCategory(cat === filterCategory ? null : cat)}
-              style={[styles.filterChip, filterCategory === cat && styles.filterChipActive]}
+              onPress={() =>
+                setFilterCategory(cat === filterCategory ? null : cat)
+              }
+              style={[
+                styles.filterChip,
+                filterCategory === cat && styles.filterChipActive,
+              ]}
             >
               <Ionicons
                 name={getCategoryIcon(cat) as any}
                 size={13}
-                color={filterCategory === cat ? palette.surface : palette.inkSoft}
+                color={
+                  filterCategory === cat ? palette.surface : palette.inkSoft
+                }
               />
-              <Text style={[styles.filterChipText, filterCategory === cat && styles.filterChipTextActive]}>
+              <Text
+                style={[
+                  styles.filterChipText,
+                  filterCategory === cat && styles.filterChipTextActive,
+                ]}
+              >
                 {cat}
               </Text>
             </Pressable>
@@ -341,71 +560,107 @@ export default function GroupScreen() {
 
       {filteredExpenses.length > 0 ? (
         filteredExpenses.map((expense) => {
-          const commentCount = group.comments.filter((c) => c.expenseId === expense.id).length;
+          const commentCount = group.comments.filter(
+            (c) => c.expenseId === expense.id,
+          ).length;
           return (
-          <Pressable
-            key={expense.id}
-            style={styles.expenseCard}
-            onPress={() => setCommentingExpense(expense)}
-            onLongPress={() =>
-              Alert.alert(expense.title, "What would you like to do?", [
-                { text: "Cancel", style: "cancel" },
-                {
-                  text: "Edit",
-                  onPress: () => {
-                    setEditingExpense(expense);
-                    setModalOpen(true);
+            <Pressable
+              key={expense.id}
+              style={styles.expenseCard}
+              onPress={() => setCommentingExpense(expense)}
+              onLongPress={() =>
+                Alert.alert(expense.title, "What would you like to do?", [
+                  { text: "Cancel", style: "cancel" },
+                  {
+                    text: "Edit",
+                    onPress: () => {
+                      setEditingExpense(expense);
+                      setModalOpen(true);
+                    },
                   },
-                },
-                {
-                  text: "Delete",
-                  style: "destructive",
-                  onPress: () => deleteExpense(group.id, expense.id),
-                },
-              ])
-            }
-          >
-            <View style={styles.expenseInfo}>
-              <View style={styles.expenseTitleRow}>
-                <Ionicons
-                  name={getCategoryIcon(expense.category) as any}
-                  size={14}
-                  color={palette.accent}
-                />
-                <Text style={styles.expenseTitle}>{expense.title}</Text>
+                  {
+                    text: "Duplicate",
+                    onPress: () => {
+                      const { id, createdAt, recurrenceParentId, ...rest } =
+                        expense;
+                      addExpense(group.id, { ...rest, recurrence: "none" });
+                    },
+                  },
+                  {
+                    text: "Delete",
+                    style: "destructive",
+                    onPress: () => deleteExpense(group.id, expense.id),
+                  },
+                ])
+              }
+            >
+              <View style={styles.expenseInfo}>
+                <View style={styles.expenseTitleRow}>
+                  <Ionicons
+                    name={getCategoryIcon(expense.category) as any}
+                    size={14}
+                    color={palette.accent}
+                  />
+                  <Text style={styles.expenseTitle}>{expense.title}</Text>
+                </View>
+                <View style={styles.expensePaidByRow}>
+                  <Text style={styles.expensePaidBy}>
+                    {expense.paidBy} paid
+                  </Text>
+                  {expense.recurrence !== "none" &&
+                    !expense.recurrenceParentId && (
+                      <View style={styles.recurBadge}>
+                        <Ionicons
+                          name="repeat-outline"
+                          size={11}
+                          color={palette.accent}
+                        />
+                        <Text style={styles.recurBadgeText}>
+                          {expense.recurrence}
+                        </Text>
+                      </View>
+                    )}
+                </View>
+                <Text style={styles.expenseParticipants}>
+                  {expense.splitMode === "even"
+                    ? "Split evenly"
+                    : `Custom split (${expense.splitMode})`}
+                  {" · "}
+                  {expense.participants.join(", ")}
+                </Text>
+                <View style={styles.expenseCommentRow}>
+                  <Ionicons
+                    name="chatbubble-outline"
+                    size={12}
+                    color={palette.inkFaint}
+                  />
+                  <Text style={styles.expenseCommentCount}>
+                    {commentCount > 0
+                      ? `${commentCount} comment${commentCount !== 1 ? "s" : ""}`
+                      : "Add comment"}
+                  </Text>
+                </View>
               </View>
-              <View style={styles.expensePaidByRow}>
-                <Text style={styles.expensePaidBy}>{expense.paidBy} paid</Text>
-                {expense.recurrence !== "none" && !expense.recurrenceParentId && (
-                  <View style={styles.recurBadge}>
-                    <Ionicons name="repeat-outline" size={11} color={palette.accent} />
-                    <Text style={styles.recurBadgeText}>{expense.recurrence}</Text>
-                  </View>
+              <View style={styles.expenseRight}>
+                <Text style={styles.expenseAmount}>
+                  ₦{expense.amount.toLocaleString()}
+                </Text>
+                {expense.receiptUrl && (
+                  <Pressable
+                    onPress={(e) => {
+                      e.stopPropagation?.();
+                      setViewingReceipt(expense.receiptUrl);
+                    }}
+                    hitSlop={8}
+                  >
+                    <Image
+                      source={{ uri: expense.receiptUrl }}
+                      style={styles.receiptThumb}
+                    />
+                  </Pressable>
                 )}
               </View>
-              <Text style={styles.expenseParticipants}>
-                {expense.splitMode === "even" ? "Split evenly" : `Custom split (${expense.splitMode})`}
-                {" · "}
-                {expense.participants.join(", ")}
-              </Text>
-              <View style={styles.expenseCommentRow}>
-                <Ionicons name="chatbubble-outline" size={12} color={palette.inkFaint} />
-                <Text style={styles.expenseCommentCount}>
-                  {commentCount > 0 ? `${commentCount} comment${commentCount !== 1 ? "s" : ""}` : "Add comment"}
-                </Text>
-              </View>
-            </View>
-            <View style={styles.expenseRight}>
-              <Text style={styles.expenseAmount}>
-                ₦{expense.amount.toLocaleString()}
-              </Text>
-              {expense.receiptUrl && (
-                <Pressable onPress={(e) => { e.stopPropagation?.(); setViewingReceipt(expense.receiptUrl); }} hitSlop={8}>
-                  <Image source={{ uri: expense.receiptUrl }} style={styles.receiptThumb} />
-                </Pressable>
-              )}
-            </View>
-          </Pressable>
+            </Pressable>
           );
         })
       ) : (
@@ -422,11 +677,16 @@ export default function GroupScreen() {
       )}
 
       <View style={styles.bottomActions}>
-        <Pressable onPress={() => setModalOpen(true)} style={[styles.button, { flex: 1 }]}>
+        <Pressable
+          onPress={() => setModalOpen(true)}
+          style={[styles.button, { flex: 1 }]}
+        >
           <Text style={styles.buttonText}>Add Expense</Text>
         </Pressable>
         <Pressable
-          onPress={() => exportGroupCSV(group.name, group.expenses, group.settlements)}
+          onPress={() =>
+            exportGroupCSV(group.name, group.expenses, group.settlements)
+          }
           style={styles.exportButton}
         >
           <Ionicons name="download-outline" size={18} color={palette.inkSoft} />
@@ -437,7 +697,9 @@ export default function GroupScreen() {
         <>
           <View style={[styles.sectionHeader, { marginTop: 28 }]}>
             <Text style={styles.sectionTitle}>Activity</Text>
-            <Text style={styles.sectionHint}>Everything that's happened in this group</Text>
+            <Text style={styles.sectionHint}>
+              Everything that's happened in this group
+            </Text>
           </View>
 
           {activityFeed.map((item, index) =>
@@ -460,7 +722,9 @@ export default function GroupScreen() {
                   <Text style={styles.activityAmount}>
                     ₦{item.data.amount.toLocaleString()}
                   </Text>
-                  <Text style={styles.activityTime}>{timeAgo(item.data.createdAt)}</Text>
+                  <Text style={styles.activityTime}>
+                    {timeAgo(item.data.createdAt)}
+                  </Text>
                 </View>
               </View>
             ) : (
@@ -477,14 +741,23 @@ export default function GroupScreen() {
                     {item.data.from} settled with {item.data.to}
                   </Text>
                   <Text style={styles.activitySub}>
-                    {item.data.paymentMethod === "paystack" ? "Paid via Paystack" : "Marked manually"}
+                    {item.data.paymentMethod === "paystack"
+                      ? "Paid via Paystack"
+                      : "Marked manually"}
                   </Text>
                 </View>
                 <View style={styles.activityRight}>
-                  <Text style={[styles.activityAmount, styles.activityAmountSettled]}>
+                  <Text
+                    style={[
+                      styles.activityAmount,
+                      styles.activityAmountSettled,
+                    ]}
+                  >
                     ₦{item.data.amount.toLocaleString()}
                   </Text>
-                  <Text style={styles.activityTime}>{timeAgo(item.data.createdAt)}</Text>
+                  <Text style={styles.activityTime}>
+                    {timeAgo(item.data.createdAt)}
+                  </Text>
                 </View>
               </View>
             ),
@@ -502,11 +775,21 @@ export default function GroupScreen() {
       />
 
       <Modal visible={!!viewingReceipt} transparent animationType="fade">
-        <Pressable style={styles.receiptOverlay} onPress={() => setViewingReceipt(undefined)}>
+        <Pressable
+          style={styles.receiptOverlay}
+          onPress={() => setViewingReceipt(undefined)}
+        >
           {viewingReceipt && (
-            <Image source={{ uri: viewingReceipt }} style={styles.receiptFull} resizeMode="contain" />
+            <Image
+              source={{ uri: viewingReceipt }}
+              style={styles.receiptFull}
+              resizeMode="contain"
+            />
           )}
-          <Pressable style={styles.receiptClose} onPress={() => setViewingReceipt(undefined)}>
+          <Pressable
+            style={styles.receiptClose}
+            onPress={() => setViewingReceipt(undefined)}
+          >
             <Ionicons name="close" size={22} color={palette.surface} />
           </Pressable>
         </Pressable>
@@ -514,7 +797,10 @@ export default function GroupScreen() {
 
       <AddExpenseModal
         open={modalOpen}
-        setOpen={(v) => { setModalOpen(v); if (!v) setEditingExpense(undefined); }}
+        setOpen={(v) => {
+          setModalOpen(v);
+          if (!v) setEditingExpense(undefined);
+        }}
         group={group}
         editingExpense={editingExpense}
       />
@@ -524,7 +810,10 @@ export default function GroupScreen() {
         group={group}
         currentUserId={user?.id ?? ""}
         onClose={() => setSettingsOpen(false)}
-        onLeaveOrDelete={() => { setSettingsOpen(false); router.back(); }}
+        onLeaveOrDelete={() => {
+          setSettingsOpen(false);
+          router.back();
+        }}
       />
     </AppScreen>
   );
@@ -654,6 +943,25 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: "#D8D1C7",
   },
+  heroInsights: {
+    marginTop: 16,
+    paddingTop: 14,
+    borderTopWidth: 1,
+    borderTopColor: "rgba(255,255,255,0.1)",
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 12,
+  },
+  heroInsightItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+  },
+  heroInsightText: {
+    fontFamily: typography.body,
+    fontSize: 12,
+    color: "#D8D1C7",
+  },
   sectionTitle: {
     fontFamily: typography.display,
     fontSize: 26,
@@ -722,6 +1030,96 @@ const styles = StyleSheet.create({
     fontFamily: typography.bodyMedium,
     fontSize: 15,
     color: palette.ink,
+  },
+  historyToggle: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingVertical: 10,
+    marginBottom: 4,
+  },
+  historyToggleText: {
+    fontFamily: typography.bodyMedium,
+    fontSize: 13,
+    color: palette.inkSoft,
+  },
+  historyRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingVertical: 9,
+    borderBottomWidth: 1,
+    borderBottomColor: palette.line,
+  },
+  historyText: {
+    flex: 1,
+    fontFamily: typography.body,
+    fontSize: 13,
+    color: palette.inkSoft,
+  },
+  historyName: {
+    fontFamily: typography.bodyMedium,
+    color: palette.ink,
+  },
+  historyAmount: {
+    fontFamily: typography.bodyMedium,
+    fontSize: 13,
+    color: palette.positive,
+  },
+  historyTime: {
+    fontFamily: typography.body,
+    fontSize: 11,
+    color: palette.inkFaint,
+  },
+  budgetCard: {
+    backgroundColor: palette.surfaceMuted,
+    borderRadius: radii.md,
+    borderWidth: 1,
+    borderColor: palette.line,
+    padding: 14,
+    marginBottom: 16,
+  },
+  budgetCardExceeded: {
+    borderColor: "rgba(220,38,38,0.35)",
+    backgroundColor: "rgba(220,38,38,0.04)",
+  },
+  budgetRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginBottom: 10,
+  },
+  budgetLabel: {
+    flex: 1,
+    fontFamily: typography.body,
+    fontSize: 13,
+    color: palette.inkSoft,
+  },
+  budgetLabelExceeded: {
+    color: palette.negative,
+    fontFamily: typography.bodyMedium,
+  },
+  budgetPct: {
+    fontFamily: typography.bodyMedium,
+    fontSize: 12,
+    color: palette.inkSoft,
+  },
+  budgetTrack: {
+    height: 6,
+    backgroundColor: palette.line,
+    borderRadius: 3,
+    overflow: "hidden",
+  },
+  budgetFill: {
+    height: 6,
+    backgroundColor: palette.accent,
+    borderRadius: 3,
+  },
+  budgetFillWarning: {
+    backgroundColor: "#f59e0b",
+  },
+  budgetFillExceeded: {
+    backgroundColor: palette.negative,
   },
   searchBar: {
     flexDirection: "row",
